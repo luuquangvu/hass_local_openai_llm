@@ -62,8 +62,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
             try:
-                models = await client.models.list()
-                _LOGGER.warning(models)
+                await client.models.list()
             except OpenAIError:
                 errors["base"] = "cannot_connect"
             except Exception:

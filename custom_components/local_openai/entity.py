@@ -219,7 +219,6 @@ async def _transform_stream(
                 content = await loop.run_in_executor(None, demoji.replace, content, "")
 
             if content == "<think>":
-                LOGGER.warning("LLM began thinking")
                 in_think = True
                 pending_think = ""
 
@@ -227,7 +226,7 @@ async def _transform_stream(
                 if content == "</think>":
                     in_think = False
                     if pending_think.strip():
-                        LOGGER.warning(f"LLM Thought: {pending_think}")
+                        LOGGER.debug(f"LLM Thought: {pending_think}")
                     pending_think = ""
                 elif content != "<think>":
                     pending_think = pending_think + content
