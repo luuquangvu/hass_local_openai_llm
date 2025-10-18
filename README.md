@@ -11,6 +11,7 @@
 - Uses streamed LLM responses
 - Conversation Agents support TTS streaming
 - Automatically strips `<think>` tags from responses
+- Added support for image inputs for AI Task Agents
 - Added support for reconfiguring Conversation Agents
 - Added option to trim conversation history to help stay within your context window
 - Added temperature control
