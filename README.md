@@ -57,6 +57,10 @@ After installation, configure the integration through Home Assistant's UI:
 3. Search for `Local OpenAI LLM`.
 4. Follow the setup wizard to configure your desired services.
 
+## Additional
+
+Looking to add some more functionality to your Home Assistant conversation agent? Check out my [Tools for Assist](https://github.com/skye-harris/llm_intents) integration here!
+
 ## Acknowledgements
 
 - This integration is forked from the [OpenRouter](https://github.com/home-assistant/core/tree/dev/homeassistant/components/open_router) integration for Home Assistant by [@joostlek](https://github.com/joostlek)
