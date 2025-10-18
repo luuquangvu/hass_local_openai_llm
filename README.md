@@ -1,0 +1,61 @@
+# Local OpenAI API _(Custom Integration for Home Assistant)_
+
+ **Allows use of generic OpenAI-compatible LLM services, such as (but not limited to):**
+- llama.cpp
+- vLLM
+- LM Studio
+
+**This integration has been forked from Home Assistants OpenRouter integration, with the following changes:**
+- Added server URL to the initial server configuration
+- Made the API Key optional during initial server configuration: can be left blank if your local server does not require one
+- Uses streamed LLM responses
+- Conversation Agents support TTS streaming
+- Added support for reconfiguring Conversation Agents
+- Added option to trim conversation history to help stay within your context window
+- Added temperature control
+- Added option to strip emojis from responses
+- Added option to take full manual control of the prompt
+  - This will remove ALL content that Home Assistant normally inserts when compiling the system prompt that's sent ot the LLM
+  - Additional variables are exposed to the prompt jinja template for tools, entities, voice-satellite area, etc
+  - **For advanced use only: not recommended for most users, and not yet documented here**
+
+---
+
+## Installation
+
+### Install via HACS (recommended)
+
+Have [HACS](https://hacs.xyz/) installed, this will allow you to update easily.
+
+* Adding Tools for Assist to HACS can be using this button:
+  [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=skye-harris&repository=hass_local_openai_api&category=integration)
+
+<br>
+
+> [!NOTE]
+> If the button above doesn't work, add `https://github.com/skye-harris/hass_local_openai_api` as a custom repository of type Integration in HACS.
+
+* Click install on the `Local OpenAI API` integration.
+* Restart Home Assistant.
+
+<details><summary>Manual Install</summary>
+
+* Copy the `hass_local_openai_api`  folder from [latest release](https://github.com/skye-harris/hass_local_openai_api/releases/latest) to the [
+  `custom_components` folder](https://developers.home-assistant.io/docs/creating_integration_file_structure/#where-home-assistant-looks-for-integrations) in your config directory.
+* Restart the Home Assistant.
+
+</details>
+
+## Integration Configuration
+
+After installation, configure the integration through Home Assistant's UI:
+
+1. Go to `Settings` → `Devices & Services`.
+2. Click `Add Integration`.
+3. Search for `Local OpenAI API`.
+4. Follow the setup wizard to configure your desired services.
+
+## Acknowledgements
+
+- This integration is forked from the [OpenRouter](https://github.com/home-assistant/core/tree/dev/homeassistant/components/open_router) integration for Home Assistant by [@joostlek](https://github.com/joostlek)
+- This integration uses code from the [Local LLMs](https://github.com/acon96/home-llm) integration for Home Assistant by [@acon96](https://github.com/acon96/home-llm) 
