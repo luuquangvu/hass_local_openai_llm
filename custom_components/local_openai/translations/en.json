@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Local OpenAI Server",
+        "data": {
+          "base_url": "Server URL",
+          "api_key": "API key"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not communicate with the server",
+      "unknown": "An unknown error occurred"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
+    }
+  },
+  "config_subentries": {
+    "conversation": {
+      "step": {
+        "user": {
+          "title": "Configure the new conversation agent",
+          "data": {
+            "model": "Model",
+            "prompt": "System Prompt",
+            "llm_hass_api": "Tool Providers",
+            "strip_emojis": "Strip emojis from response"
+          },
+          "data_description": {
+            "model": "The model to use for the conversation agent",
+            "prompt": "Instruct how the LLM should respond. This can be a template."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure the conversation agent",
+          "data": {
+            "model": "Model",
+            "prompt": "System Prompt",
+            "llm_hass_api": "Tool Providers",
+            "strip_emojis": "Strip emojis from response"
+          },
+          "data_description": {
+            "model": "The model to use for the conversation agent",
+            "prompt": "Instruct how the LLM should respond. This can be a template."
+          }
+        }
+      },
+      "initiate_flow": {
+        "user": "Add conversation agent"
+      },
+      "entry_type": "Conversation agent",
+      "abort": {
+        "cannot_connect": "Could not communicate with the server",
+        "unknown": "An unknown error occurred",
+        "reconfigure_successful": "Conversation Agent has been reconfigured"
+      }
+    },
+    "ai_task_data": {
+      "step": {
+        "user": {
+          "data": {
+            "model": "The model to use for the AI Task agent"
+          }
+        }
+      },
+      "initiate_flow": {
+        "user": "Add AI task"
+      },
+      "entry_type": "AI task",
+      "abort": {
+        "cannot_connect": "Could not communicate with the server",
+        "unknown": "An unknown error occurred",
+        "reconfigure_successful": "AI Task Agent has been reconfigured"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "reconfigure": {
+        "title": "Reconfigure the conversation agent",
+        "data": {
+          "model": "Model",
+          "prompt": "System Prompt",
+          "llm_hass_api": "Tool Providers",
+          "strip_emojis": "Strip emojis from response"
+        },
+        "data_description": {
+          "model": "The model to use for the conversation agent",
+          "prompt": "Instruct how the LLM should respond. This can be a template."
+        }
+      }
+    }
+  }
+}

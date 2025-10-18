@@ -1,0 +1,45 @@
+name: "Release"
+
+on:
+  release:
+    types:
+      - "published"
+
+permissions: {}
+
+jobs:
+  release:
+    name: "Release"
+    runs-on: "ubuntu-latest"
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - name: "Checkout the repository"
+        uses: "actions/checkout@v5.0.0"
+
+      - name: Adjust version number
+        shell: bash
+        run: |
+          version="${{ github.event.release.tag_name }}"
+          version="${version,,}"
+          version="${version#v}"
+          yq e -P -o=json \
+            -i ".version = \"${version}\"" \
+            "${{ github.workspace }}/custom_components/local_openai/manifest.json"
+
+      - name: "ZIP the integration directory"
+        shell: "bash"
+        run: |
+          cd "${{ github.workspace }}/custom_components/local_openai"
+          zip local_openai.zip -r ./
+
+      - name: Sign release package
+        uses: sigstore/gh-action-sigstore-python@v3.0.1
+        with:
+          inputs: ${{ github.workspace }}/custom_components/local_openai/local_openai.zip
+
+      - name: "Upload the ZIP file to the release"
+        uses: "softprops/action-gh-release@v2.3.3"
+        with:
+          files: ${{ github.workspace }}/custom_components/local_openai/local_openai.zip
