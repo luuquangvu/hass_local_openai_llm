@@ -1,4 +1,4 @@
-# Local OpenAI API _(Custom Integration for Home Assistant)_
+# Local OpenAI LLM _(Custom Integration for Home Assistant)_
 
  **Allows use of generic OpenAI-compatible LLM services, such as (but not limited to):**
 - llama.cpp
@@ -37,7 +37,7 @@ Have [HACS](https://hacs.xyz/) installed, this will allow you to update easily.
 > [!NOTE]
 > If the button above doesn't work, add `https://github.com/skye-harris/hass_local_openai_api` as a custom repository of type Integration in HACS.
 
-* Click install on the `Local OpenAI API` integration.
+* Click install on the `Local OpenAI LLM` integration.
 * Restart Home Assistant.
 
 <details><summary>Manual Install</summary>
@@ -54,7 +54,7 @@ After installation, configure the integration through Home Assistant's UI:
 
 1. Go to `Settings` → `Devices & Services`.
 2. Click `Add Integration`.
-3. Search for `Local OpenAI API`.
+3. Search for `Local OpenAI LLM`.
 4. Follow the setup wizard to configure your desired services.
 
 ## Acknowledgements

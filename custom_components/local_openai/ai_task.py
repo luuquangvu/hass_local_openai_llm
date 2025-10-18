@@ -1,4 +1,4 @@
-"""AI Task integration for Local OpenAI API."""
+"""AI Task integration for Local OpenAI LLM."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class LocalAITaskEntity(
     ai_task.AITaskEntity,
     LocalAiEntity,
 ):
-    """Local OpenAI API AI Task entity."""
+    """Local OpenAI LLM AI Task entity."""
 
     _attr_name = None
     _attr_supported_features = (

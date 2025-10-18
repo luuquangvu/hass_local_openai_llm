@@ -1,4 +1,4 @@
-"""Constants for the Local OpenAI API integration."""
+"""Constants for the Local OpenAI LLM integration."""
 
 import logging
 

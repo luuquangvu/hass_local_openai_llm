@@ -1,4 +1,4 @@
-"""Conversation support for Local OpenAI API."""
+"""Conversation support for Local OpenAI LLM."""
 
 from typing import Literal
 
@@ -29,7 +29,7 @@ async def async_setup_entry(
 
 
 class LocalAiConversationEntity(LocalAiEntity, conversation.ConversationEntity):
-    """Local OpenAI API conversation agent."""
+    """Local OpenAI LLM conversation agent."""
 
     _attr_name = None
     _attr_supports_streaming = True

@@ -1,4 +1,4 @@
-"""The Local OpenAI API integration."""
+"""The Local OpenAI LLM integration."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ type LocalAiConfigEntry = ConfigEntry[AsyncOpenAI]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> bool:
-    """Set up Local OpenAI API from a config entry."""
+    """Set up Local OpenAI LLM from a config entry."""
     client = AsyncOpenAI(
         base_url=entry.data[CONF_BASE_URL],
         api_key=entry.data.get(CONF_API_KEY, ""),
@@ -54,5 +54,5 @@ async def _async_update_listener(
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> bool:
-    """Unload Local OpenAI API."""
+    """Unload Local OpenAI LLM."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

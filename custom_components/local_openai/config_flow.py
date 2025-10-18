@@ -1,4 +1,4 @@
-"""Config flow for Local OpenAI API integration."""
+"""Config flow for Local OpenAI LLM integration."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Local OpenAI API."""
+    """Handle a config flow for Local OpenAI LLM."""
 
     VERSION = 1
 
@@ -86,7 +86,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
-    """Handle subentry flow for Local OpenAI API."""
+    """Handle subentry flow for Local OpenAI LLM."""
 
 
 class ConversationFlowHandler(LocalAiSubentryFlowHandler):
