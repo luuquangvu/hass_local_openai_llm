@@ -14,7 +14,7 @@
       "unknown": "An unknown error occurred"
     },
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
+      "already_configured": "Already configured"
     }
   },
   "config_subentries": {
@@ -26,7 +26,11 @@
             "model": "Model",
             "prompt": "System Prompt",
             "llm_hass_api": "Tool Providers",
-            "strip_emojis": "Strip emojis from response"
+            "strip_emojis": "Strip emojis from response",
+            "suggested_value": "Suggested value",
+            "temperature": "Temperature",
+            "max_message_history": "Max message history size",
+            "manual_prompting": "Full manual prompting"
           },
           "data_description": {
             "model": "The model to use for the conversation agent",
@@ -39,7 +43,11 @@
             "model": "Model",
             "prompt": "System Prompt",
             "llm_hass_api": "Tool Providers",
-            "strip_emojis": "Strip emojis from response"
+            "strip_emojis": "Strip emojis from response",
+            "suggested_value": "Suggested value",
+            "temperature": "Temperature",
+            "max_message_history": "Max message history size",
+            "manual_prompting": "Full manual prompting"
           },
           "data_description": {
             "model": "The model to use for the conversation agent",
@@ -84,7 +92,11 @@
           "model": "Model",
           "prompt": "System Prompt",
           "llm_hass_api": "Tool Providers",
-          "strip_emojis": "Strip emojis from response"
+          "strip_emojis": "Strip emojis from response",
+          "suggested_value": "Suggested value",
+          "temperature": "Temperature",
+          "max_message_history": "Max message history size",
+          "manual_prompting": "Full manual prompting"
         },
         "data_description": {
           "model": "The model to use for the conversation agent",

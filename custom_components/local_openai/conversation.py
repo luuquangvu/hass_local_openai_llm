@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import LocalAiConfigEntry
-from .const import DOMAIN, CONF_STRIP_EMOJIS
+from .const import DOMAIN
 from .entity import LocalAiEntity
 
 
@@ -54,17 +54,18 @@ class LocalAiConversationEntity(LocalAiEntity, conversation.ConversationEntity):
     ) -> conversation.ConversationResult:
         """Process the user input and call the API."""
         options = self.subentry.data
+        system_prompt = options.get(CONF_PROMPT)
 
         try:
             await chat_log.async_provide_llm_data(
                 user_input.as_llm_context(DOMAIN),
                 options.get(CONF_LLM_HASS_API),
-                options.get(CONF_PROMPT),
+                system_prompt,
                 user_input.extra_system_prompt,
             )
         except conversation.ConverseError as err:
             return err.as_conversation_result()
 
-        await self._async_handle_chat_log(chat_log, strip_emojis=options.get(CONF_STRIP_EMOJIS))
+        await self._async_handle_chat_log(chat_log, user_input=user_input)
 
         return conversation.async_get_result_from_chat_log(user_input, chat_log)

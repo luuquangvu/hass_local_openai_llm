@@ -23,9 +23,12 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     TemplateSelector,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
 )
 
-from .const import DOMAIN, RECOMMENDED_CONVERSATION_OPTIONS, CONF_BASE_URL, CONF_STRIP_EMOJIS
+from .const import DOMAIN, RECOMMENDED_CONVERSATION_OPTIONS, CONF_BASE_URL, CONF_STRIP_EMOJIS, CONF_MANUAL_PROMPTING, CONF_MAX_MESSAGE_HISTORY, CONF_TEMPERATURE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,11 +89,79 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
 class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
     """Handle subentry flow for Local OpenAI API."""
 
+
 class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
+    async def get_schema(self, options: dict = {}):
+        hass_apis: list[SelectOptionDict] = [
+            SelectOptionDict(
+                label=api.name,
+                value=api.id,
+            )
+            for api in llm.async_get_apis(self.hass)
+        ]
+
+        client = self._get_entry().runtime_data
+        response = await client.models.list()
+        downloaded_models: list[SelectOptionDict] = [
+            SelectOptionDict(
+                label=model.id,
+                value=model.id,
+            )
+            for model in response.data
+        ]
+
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_MODEL,
+                    default=options.get(CONF_MODEL),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=downloaded_models, custom_value=True)
+                ),
+                vol.Optional(
+                    CONF_PROMPT,
+                    default=options.get(CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]),
+                ): TemplateSelector(),
+                vol.Optional(
+                    CONF_LLM_HASS_API,
+                    default=options.get(CONF_LLM_HASS_API, RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API]),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=hass_apis, multiple=True)
+                ),
+                vol.Optional(
+                    CONF_STRIP_EMOJIS,
+                    default=options.get(CONF_STRIP_EMOJIS, False),
+                ): bool,
+                vol.Optional(
+                    CONF_MANUAL_PROMPTING,
+                    default=options.get(CONF_MANUAL_PROMPTING, False),
+                ): bool,
+                vol.Optional(
+                    CONF_TEMPERATURE,
+                    default=options.get(CONF_TEMPERATURE, 0.6),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=1, step=0.01, mode=NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_MESSAGE_HISTORY,
+                    default=options.get(CONF_MAX_MESSAGE_HISTORY, 0),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0,
+                        max=50,
+                        step=1,
+                        mode=NumberSelectorMode.BOX,
+                    )
+                )
+            }
+        )
+
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+            self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
@@ -100,57 +171,9 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 title=f"{user_input.get(CONF_MODEL, "Local")} AI Agent", data=user_input
             )
 
-        hass_apis: list[SelectOptionDict] = [
-            SelectOptionDict(
-                label=api.name,
-                value=api.id,
-            )
-            for api in llm.async_get_apis(self.hass)
-        ]
-
-        try:
-            client = self._get_entry().runtime_data
-            response = await client.models.list()
-            downloaded_models: list[SelectOptionDict] = [
-                SelectOptionDict(
-                    label=model.id,
-                    value=model.id,
-                )
-                for model in response.data
-            ]
-        except Exception:
-            _LOGGER.exception("Failed to get models from OpenAI server")
-            return self.async_abort(reason="cannot_connect")
-
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_MODEL,
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=downloaded_models, custom_value=True)
-                    ),
-                    vol.Optional(
-                        CONF_PROMPT,
-                        description={
-                            "suggested_value": RECOMMENDED_CONVERSATION_OPTIONS[
-                                CONF_PROMPT
-                            ]
-                        },
-                    ): TemplateSelector(),
-                    vol.Optional(
-                        CONF_LLM_HASS_API,
-                        default=RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=hass_apis, multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_STRIP_EMOJIS,
-                        default=False,
-                    ): bool,
-                }
-            ),
+            data_schema=await self.get_schema(),
         )
 
     async def async_step_reconfigure(
@@ -166,56 +189,11 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 data=user_input,
             )
 
-        hass_apis: list[SelectOptionDict] = [
-            SelectOptionDict(
-                label=api.name,
-                value=api.id,
-            )
-            for api in llm.async_get_apis(self.hass)
-        ]
-
         options = self._get_reconfigure_subentry().data.copy()
-
-        try:
-            client = self._get_entry().runtime_data
-            response = await client.models.list()
-            downloaded_models: list[SelectOptionDict] = [
-                SelectOptionDict(
-                    label=model.id,
-                    value=model.id,
-                )
-                for model in response.data
-            ]
-        except Exception:
-            _LOGGER.exception("Failed to get models from OpenAI server")
-            return self.async_abort(reason="cannot_connect")
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_MODEL,
-                        default=options.get(CONF_MODEL),
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=downloaded_models, custom_value=True)
-                    ),
-                    vol.Optional(
-                        CONF_PROMPT,
-                        default=options.get(CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]),
-                    ): TemplateSelector(),
-                    vol.Optional(
-                        CONF_LLM_HASS_API,
-                        default=options.get(CONF_LLM_HASS_API, RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API]),
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=hass_apis, multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_STRIP_EMOJIS,
-                        default=options.get(CONF_STRIP_EMOJIS, False),
-                    ): bool,
-                }
-            ),
+            data_schema=await self.get_schema(options),
         )
 
 

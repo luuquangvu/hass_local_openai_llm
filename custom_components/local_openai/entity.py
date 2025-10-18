@@ -34,13 +34,14 @@ from voluptuous_openapi import convert
 
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import CONF_MODEL
+from homeassistant.const import CONF_MODEL, CONF_PROMPT
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr, llm
 from homeassistant.helpers.entity import Entity
 
 from . import LocalAiConfigEntry
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, CONF_STRIP_EMOJIS, CONF_MANUAL_PROMPTING, CONF_MAX_MESSAGE_HISTORY, CONF_TEMPERATURE
+from .prompt import format_custom_prompt
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
@@ -103,7 +104,6 @@ def _format_tool(
     if tool.description:
         tool_spec["description"] = tool.description
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
-
 
 
 def b64_file(file_path):
@@ -219,6 +219,7 @@ async def _transform_stream(
                 content = await loop.run_in_executor(None, demoji.replace, content, "")
 
             if content == "<think>":
+                LOGGER.warning("LLM began thinking")
                 in_think = True
                 pending_think = ""
 
@@ -261,18 +262,22 @@ class LocalAiEntity(Entity):
         chat_log: conversation.ChatLog,
         structure_name: str | None = None,
         structure: vol.Schema | None = None,
-        strip_emojis: bool = False,
+        user_input: conversation.ConversationInput | None = None,
     ) -> None:
         """Generate an answer for the chat log."""
+        options = self.subentry.data
+        strip_emojis = options.get(CONF_STRIP_EMOJIS)
+        max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
+        temperature = options.get(CONF_TEMPERATURE, 0.6)
 
         model_args = {
             "model": self.model,
             "user": chat_log.conversation_id,
             "extra_headers": {
                 "X-Title": "Home Assistant",
-                "HTTP-Referer": "https://www.home-assistant.io/integrations/open_router",
             },
             "extra_body": {"require_parameters": True},
+            "temperature": temperature,
         }
 
         tools: list[ChatCompletionFunctionToolParam] | None = None
@@ -285,11 +290,19 @@ class LocalAiEntity(Entity):
         if tools:
             model_args["tools"] = tools
 
-        model_args["messages"] = [
+        messages = self._trim_history([
             m
             for content in chat_log.content
             if (m := await _convert_content_to_chat_message(content))
-        ]
+        ], max_message_history)
+
+        # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
+        # Additional variables for tools and devices are exposed to the jinja prompt
+        if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
+            prompt = format_custom_prompt(self.hass, options.get(CONF_PROMPT), user_input, tools)
+            messages[0] = ChatCompletionSystemMessageParam(role="system", content=prompt)
+
+        model_args["messages"] = messages
 
         if structure:
             if TYPE_CHECKING:
@@ -326,3 +339,32 @@ class LocalAiEntity(Entity):
 
             if not chat_log.unresponded_tool_results:
                 break
+
+
+    @staticmethod
+    def _trim_history(messages: list, max_messages: int) -> list:
+        """Trims excess messages from a single history.
+
+        This sets the max history to allow a configurable size history may take
+        up in the context window.
+
+        Logic borrowed from the Ollama integration with thanks
+        """
+        if max_messages < 1:
+            # Keep all messages
+            return messages
+
+        # Ignore the in progress user message
+        num_previous_rounds = sum(m["role"] == "assistant" for m in messages) - 1
+        if num_previous_rounds >= max_messages:
+            # Trim history but keep system prompt (first message).
+            # Every other message should be an assistant message, so keep 2x
+            # message objects. Also keep the last in progress user message
+            num_keep = 2 * max_messages + 1
+            drop_index = len(messages) - num_keep
+            messages = [
+                messages[0],
+                *messages[int(drop_index):],
+            ]
+
+        return messages
