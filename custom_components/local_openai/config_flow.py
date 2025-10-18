@@ -205,7 +205,7 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
         """User flow to create a sensor subentry."""
         if user_input is not None:
             return self.async_create_entry(
-                title="Local AI Task", data=user_input
+                title=f"{user_input.get(CONF_MODEL, "Local")} AI Task", data=user_input
             )
         return self.async_show_form(
             step_id="user",
