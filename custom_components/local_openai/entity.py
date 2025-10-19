@@ -220,7 +220,7 @@ async def _transform_stream(
             if current_tool_call is None:
                 current_tool_call = {
                     "name": tool_call.function.name,
-                    "args": tool_call.function.arguments
+                    "args": tool_call.function.arguments or ""
                 }
             else:
                 current_tool_call["args"] += tool_call.function.arguments
