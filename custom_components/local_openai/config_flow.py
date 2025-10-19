@@ -57,20 +57,25 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             self._async_abort_entries_match(user_input)
-            client = AsyncOpenAI(
-                base_url=user_input.get(CONF_BASE_URL),
-                api_key=user_input.get(CONF_API_KEY, ""),
-                http_client=get_async_client(self.hass),
-            )
+            _LOGGER.debug(f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}")
 
             try:
+                client = AsyncOpenAI(
+                    base_url=user_input.get(CONF_BASE_URL),
+                    api_key=user_input.get(CONF_API_KEY, ""),
+                    http_client=get_async_client(self.hass),
+                )
+
+                _LOGGER.debug("Retrieving model list to ensure server is accessible")
                 await client.models.list()
-            except OpenAIError:
+            except OpenAIError as err:
+                _LOGGER.exception(f"OpenAI Error: {err}")
                 errors["base"] = "cannot_connect"
             except Exception as err:
                 _LOGGER.exception(f"Unexpected exception: {err}")
                 errors["base"] = "unknown"
             else:
+                _LOGGER.debug("Server connection verified")
                 return self.async_create_entry(
                     title=f"{user_input.get(CONF_MODEL, "Local")} AI Agent",
                     data=user_input,
