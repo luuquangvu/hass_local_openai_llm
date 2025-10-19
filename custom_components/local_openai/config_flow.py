@@ -65,8 +65,8 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
                 await client.models.list()
             except OpenAIError:
                 errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected exception")
+            except Exception as err:
+                _LOGGER.exception(f"Unexpected exception: {err}")
                 errors["base"] = "unknown"
             else:
                 return self.async_create_entry(
