@@ -18,6 +18,7 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
 from homeassistant.core import callback
 from homeassistant.helpers import llm
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
@@ -59,6 +60,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             client = AsyncOpenAI(
                 base_url=user_input.get(CONF_BASE_URL),
                 api_key=user_input.get(CONF_API_KEY, ""),
+                http_client=get_async_client(self.hass),
             )
 
             try:
