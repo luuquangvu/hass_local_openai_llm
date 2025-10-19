@@ -59,7 +59,7 @@ After installation, configure the integration through Home Assistant's UI:
 
 ## Additional
 
-Looking to add some more functionality to your Home Assistant conversation agent? Check out my [Tools for Assist](https://github.com/skye-harris/llm_intents) integration here!
+Looking to add some more functionality to your Home Assistant conversation agent, such as web and localised business/location search? Check out my [Tools for Assist](https://github.com/skye-harris/llm_intents) integration here!
 
 ## Acknowledgements
 
