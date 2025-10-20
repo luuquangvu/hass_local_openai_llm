@@ -1,6 +1,6 @@
-# Local OpenAI LLM _(Custom Integration for Home Assistant)_
+# Local OpenAI LLM <small>_(Custom Integration for Home Assistant)_</small>
 
- **Allows use of generic OpenAI-compatible LLM services, such as (but not limited to):**
+**Allows use of generic OpenAI-compatible LLM services, such as (but not limited to):**
 - llama.cpp
 - vLLM
 - LM Studio
@@ -17,7 +17,7 @@
 - Added temperature control
 - Added option to strip emojis from responses
 - Added option to take full manual control of the prompt
-  - This will remove ALL content that Home Assistant normally inserts when compiling the system prompt that's sent ot the LLM
+  - This will remove ALL content that Home Assistant normally inserts when compiling the system prompt that's sent to the LLM
   - Additional variables are exposed to the prompt jinja template for tools, entities, voice-satellite area, etc
   - **For advanced use only: not recommended for most users, and not yet documented here**
 
@@ -29,7 +29,7 @@
 
 Have [HACS](https://hacs.xyz/) installed, this will allow you to update easily.
 
-* Adding Tools for Assist to HACS can be using this button:
+Adding Tools for Assist to HACS can be using this button:  
   [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=skye-harris&repository=hass_local_openai_llm&category=integration)
 
 <br>
@@ -56,6 +56,17 @@ After installation, configure the integration through Home Assistant's UI:
 2. Click `Add Integration`.
 3. Search for `Local OpenAI LLM`.
 4. Follow the setup wizard to configure your desired services.
+
+### Configuration Notes
+
+- The Server URL must be a fully qualified URL pointing to an OpenAI-compatible API.
+  - This typically ends with `/v1` but may differ depending on your server configuration. 
+- If you have the `Extended OpenAI Conversation` integration installed, this has a dependency of an older version of the OpenAI client library.
+  - It is strongly recommended this be uninstalled to ensure that HACS installs the correct OpenAI client library.
+- Assist requires a fairly lengthy context for tooling and entity definitions. 
+  - It is strongly recommended to use _at least_ 8k context size and to limit history length to avoid context overflow issues.
+  - This is not configurable through OpenAI-compatible APIs, and needs to be configured with the inference server directly.
+  
 
 ## Additional
 
