@@ -101,8 +101,7 @@ def _format_tool(
         name=tool.name,
         parameters=convert(tool.parameters, custom_serializer=custom_serializer),
     )
-    if tool.description:
-        tool_spec["description"] = tool.description
+    tool_spec["description"] = tool.description if tool.description.strip() else "A callable function"
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
 
 
@@ -199,6 +198,9 @@ async def _transform_stream(
     async for event in stream:
         chunk: conversation.AssistantContentDeltaDict = {}
 
+        if not event.choices:
+            continue
+
         choice = event.choices[0]
         delta = choice.delta
 
@@ -215,7 +217,7 @@ async def _transform_stream(
             ]
             current_tool_call = None
 
-        if (tool_calls := delta.tool_calls) is not None:
+        if (tool_calls := delta.tool_calls) is not None and tool_calls:
             tool_call = tool_calls[0]
             if current_tool_call is None:
                 current_tool_call = {
@@ -283,10 +285,6 @@ class LocalAiEntity(Entity):
         model_args = {
             "model": self.model,
             "user": chat_log.conversation_id,
-            "extra_headers": {
-                "X-Title": "Home Assistant",
-            },
-            "extra_body": {"require_parameters": True},
             "temperature": temperature,
         }
 
@@ -330,7 +328,7 @@ class LocalAiEntity(Entity):
             try:
                 result_stream = await client.chat.completions.create(**model_args, stream=True)
             except openai.OpenAIError as err:
-                LOGGER.error("Error talking to API: %s", err)
+                LOGGER.error("Error requesting response from API: %s", err)
                 raise HomeAssistantError("Error talking to API") from err
 
             try:
@@ -345,7 +343,7 @@ class LocalAiEntity(Entity):
                     ]
                 )
             except Exception as err:
-                LOGGER.error("Error talking to API: %s", err)
+                LOGGER.error("Error handling API response: %s", err)
 
             if not chat_log.unresponded_tool_results:
                 break
