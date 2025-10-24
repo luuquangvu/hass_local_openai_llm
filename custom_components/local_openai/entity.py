@@ -27,6 +27,7 @@ from openai.types.chat import (
 )
 
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
+from openai.types.responses.response_output_item import ImageGenerationCall
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
 import voluptuous as vol
@@ -103,6 +104,97 @@ def _format_tool(
     )
     tool_spec["description"] = tool.description if tool.description.strip() else "A callable function"
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
+
+
+def _convert_completion_content_part_to_response_input(
+    part: ChatCompletionContentPartParam,
+) -> dict[str, Any]:
+    """Convert a chat completion content part into responses API format."""
+    if part["type"] == "text":
+        return {"type": "input_text", "text": part["text"]}
+    if part["type"] == "image_url":
+        image_entry: dict[str, Any] = {
+            "type": "input_image",
+            "image_url": part["image_url"]["url"],
+        }
+        detail = part["image_url"].get("detail")
+        if detail:
+            image_entry["detail"] = detail
+        return image_entry
+    return {"type": "input_text", "text": ""}
+
+
+def _convert_completion_messages_to_response_input(
+    messages: list[ChatCompletionMessageParam],
+) -> list[dict[str, Any]]:
+    """Convert chat completion style messages into responses API format."""
+    response_messages: list[dict[str, Any]] = []
+    for message in messages:
+        role = message["role"]
+        if role == "system":
+            response_messages.append(
+                {
+                    "type": "message",
+                    "role": "developer",
+                    "content": message.get("content") or "",
+                }
+            )
+            continue
+
+        if role == "user":
+            content = message.get("content")
+            if isinstance(content, list):
+                response_messages.append(
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [
+                            _convert_completion_content_part_to_response_input(part)
+                            for part in content
+                        ],
+                    }
+                )
+            else:
+                response_messages.append(
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": content or "",
+                    }
+                )
+            continue
+
+        if role == "assistant":
+            response_messages.append(
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": message.get("content") or "",
+                }
+            )
+            tool_calls = message.get("tool_calls")
+            if tool_calls:
+                for tool_call in tool_calls:
+                    response_messages.append(
+                        {
+                            "type": "function_call",
+                            "name": tool_call["function"]["name"],
+                            "arguments": tool_call["function"]["arguments"],
+                            "call_id": tool_call["id"],
+                        }
+                    )
+            continue
+
+        if role == "tool":
+            response_messages.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": message["tool_call_id"],
+                    "output": message.get("content") or "",
+                }
+            )
+
+    return response_messages
 
 
 def b64_file(file_path):
@@ -275,18 +367,13 @@ class LocalAiEntity(Entity):
         structure_name: str | None = None,
         structure: vol.Schema | None = None,
         user_input: conversation.ConversationInput | None = None,
+        force_image: bool = False,
     ) -> None:
         """Generate an answer for the chat log."""
         options = self.subentry.data
         strip_emojis = options.get(CONF_STRIP_EMOJIS)
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 0.6)
-
-        model_args = {
-            "model": self.model,
-            "user": chat_log.conversation_id,
-            "temperature": temperature,
-        }
 
         tools: list[ChatCompletionFunctionToolParam] | None = None
         if chat_log.llm_api:
@@ -295,22 +382,43 @@ class LocalAiEntity(Entity):
                 for tool in chat_log.llm_api.tools
             ]
 
-        if tools:
-            model_args["tools"] = tools
-
-        messages = self._trim_history([
-            m
-            for content in chat_log.content
-            if (m := await _convert_content_to_chat_message(content))
-        ], max_message_history)
+        messages = self._trim_history(
+            [
+                m
+                for content in chat_log.content
+                if (m := await _convert_content_to_chat_message(content))
+            ],
+            max_message_history,
+        )
 
         # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
         # Additional variables for tools and devices are exposed to the jinja prompt
         if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-            prompt = format_custom_prompt(self.hass, options.get(CONF_PROMPT), user_input, tools)
-            messages[0] = ChatCompletionSystemMessageParam(role="system", content=prompt)
+            prompt = format_custom_prompt(
+                self.hass, options.get(CONF_PROMPT), user_input, tools
+            )
+            messages[0] = ChatCompletionSystemMessageParam(
+                role="system", content=prompt
+            )
 
-        model_args["messages"] = messages
+        if force_image:
+            await self._async_handle_image_response(
+                chat_log,
+                messages,
+                bool(strip_emojis),
+                temperature,
+            )
+            return
+
+        model_args = {
+            "model": self.model,
+            "user": chat_log.conversation_id,
+            "temperature": temperature,
+            "messages": messages,
+        }
+
+        if tools:
+            model_args["tools"] = tools
 
         if structure:
             if TYPE_CHECKING:
@@ -326,7 +434,9 @@ class LocalAiEntity(Entity):
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
             try:
-                result_stream = await client.chat.completions.create(**model_args, stream=True)
+                result_stream = await client.chat.completions.create(
+                    **model_args, stream=True
+                )
             except openai.OpenAIError as err:
                 LOGGER.error("Error requesting response from API: %s", err)
                 raise HomeAssistantError("Error talking to API") from err
@@ -337,16 +447,92 @@ class LocalAiEntity(Entity):
                         msg
                         async for content in chat_log.async_add_delta_content_stream(
                             self.entity_id,
-                            _transform_stream(result_stream, strip_emojis)
+                            _transform_stream(result_stream, strip_emojis),
                         )
                         if (msg := await _convert_content_to_chat_message(content))
                     ]
                 )
-            except Exception as err:
+            except Exception as err:  # pylint: disable=broad-except
                 LOGGER.error("Error handling API response: %s", err)
 
             if not chat_log.unresponded_tool_results:
                 break
+
+
+    async def _async_handle_image_response(
+        self,
+        chat_log: conversation.ChatLog,
+        messages: list[ChatCompletionMessageParam],
+        strip_emojis: bool,
+        temperature: float,
+    ) -> None:
+        """Generate an image response using the Responses API."""
+        response_input = _convert_completion_messages_to_response_input(messages)
+
+        model_args: dict[str, Any] = {
+            "model": self.model,
+            "input": response_input,
+            "user": chat_log.conversation_id,
+            "temperature": temperature,
+            "stream": False,
+            "store": True,
+            "tool_choice": {"type": "image_generation"},
+            "tools": [
+                {
+                    "type": "image_generation",
+                    "model": self.model,
+                    "output_format": "png",
+                }
+            ],
+        }
+
+        client = self.entry.runtime_data
+
+        try:
+            response = await client.responses.create(**model_args)
+        except openai.OpenAIError as err:
+            LOGGER.error("Error requesting image response from API: %s", err)
+            raise HomeAssistantError("Error talking to API") from err
+
+        text_output = getattr(response, "output_text", None)
+
+        if (not text_output) and getattr(response, "output", None):
+            text_parts: list[str] = []
+            for item in response.output or ():
+                content = getattr(item, "content", None)
+                if not content:
+                    continue
+                for part in content or []:
+                    if getattr(part, "type", None) == "output_text":
+                        text_parts.append(getattr(part, "text", ""))
+            if text_parts:
+                text_output = "".join(text_parts)
+
+        if text_output:
+            text_output = text_output.strip()
+        if strip_emojis and text_output:
+            text_output = demoji.replace(text_output, "")
+        if text_output == "":
+            text_output = None
+
+        image_call: ImageGenerationCall | None = None
+        for item in response.output or ():
+            if isinstance(item, ImageGenerationCall):
+                if image_call is None or image_call.result is None:
+                    image_call = item
+                else:
+                    item.result = None
+
+        if image_call is None and text_output is None:
+            raise HomeAssistantError("No image response returned from API")
+
+        chat_log.async_add_assistant_content_without_tools(
+            conversation.AssistantContent(
+                agent_id=self.entity_id,
+                content=text_output,
+                native=image_call,
+            )
+        )
 
 
     @staticmethod
