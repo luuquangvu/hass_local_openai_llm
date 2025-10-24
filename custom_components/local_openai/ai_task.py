@@ -48,7 +48,7 @@ class LocalAITaskEntity(
 
     def __init__(self, entry: LocalAiConfigEntry, subentry) -> None:
         """Initialize the AI Task entity."""
-        super().__init__()
+        ai_task.AITaskEntity.__init__(self)
         LocalAiEntity.__init__(self, entry, subentry)
 
         features = (
