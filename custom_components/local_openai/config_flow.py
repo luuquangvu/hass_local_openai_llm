@@ -101,8 +101,6 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
     def strip_model_pathing(model_name: str) -> str:
         """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension"""
         matches = re.search(r"([^\/]*)\.gguf$", model_name.strip())
-        _LOGGER.warning(f"strip_model_pathing: '{model_name}'")
-        _LOGGER.warning(matches)
         return matches[1] if matches else model_name
 
 
