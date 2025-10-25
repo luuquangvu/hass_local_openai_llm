@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import logging
 from typing import Any
 from openai import AsyncOpenAI, OpenAIError
@@ -29,7 +30,7 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
 )
 
-from .const import DOMAIN, RECOMMENDED_CONVERSATION_OPTIONS, CONF_BASE_URL, CONF_STRIP_EMOJIS, CONF_MANUAL_PROMPTING, CONF_MAX_MESSAGE_HISTORY, CONF_TEMPERATURE
+from .const import DOMAIN, RECOMMENDED_CONVERSATION_OPTIONS, CONF_BASE_URL, CONF_STRIP_EMOJIS, CONF_MANUAL_PROMPTING, CONF_MAX_MESSAGE_HISTORY, CONF_TEMPERATURE, CONF_SERVER_NAME
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,13 +78,15 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 _LOGGER.debug("Server connection verified")
                 return self.async_create_entry(
-                    title=f"{user_input.get(CONF_MODEL, "Local")} AI Agent",
+                    title=f"{user_input.get(CONF_SERVER_NAME, "Local LLM Server")}",
                     data=user_input,
                 )
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
+                    vol.Required(CONF_SERVER_NAME, default="Local LLM Server"): str,
                     vol.Required(CONF_BASE_URL): str,
                     vol.Optional(CONF_API_KEY): str,
                 }
@@ -94,6 +97,13 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
     """Handle subentry flow for Local OpenAI LLM."""
+    @staticmethod
+    def strip_model_pathing(model_name: str) -> str:
+        """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension"""
+        matches = re.search(r"([^\/]*)\.gguf$", model_name.strip())
+        _LOGGER.warning(f"strip_model_pathing: '{model_name}'")
+        _LOGGER.warning(matches)
+        return matches[1] if matches else model_name
 
 
 class ConversationFlowHandler(LocalAiSubentryFlowHandler):
@@ -109,14 +119,22 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         ]
 
         client = self._get_entry().runtime_data
-        response = await client.models.list()
-        downloaded_models: list[SelectOptionDict] = [
-            SelectOptionDict(
-                label=model.id,
-                value=model.id,
-            )
-            for model in response.data
-        ]
+
+        try:
+            response = await client.models.list()
+            downloaded_models: list[SelectOptionDict] = [
+                SelectOptionDict(
+                    label=model.id,
+                    value=model.id,
+                )
+                for model in response.data
+            ]
+        except OpenAIError as err:
+            _LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            downloaded_models = []
+        except Exception as err:
+            _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            downloaded_models = []
 
         return vol.Schema(
             {
@@ -173,8 +191,9 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         if user_input is not None:
             if not user_input.get(CONF_LLM_HASS_API):
                 user_input.pop(CONF_LLM_HASS_API, None)
+            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
             return self.async_create_entry(
-                title=f"{user_input.get(CONF_MODEL, "Local")} AI Agent", data=user_input
+                title=f"{model_name} AI Agent", data=user_input
             )
 
         return self.async_show_form(
@@ -211,14 +230,37 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
+            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
             return self.async_create_entry(
-                title=f"{user_input.get(CONF_MODEL, "Local")} AI Task", data=user_input
+                title=f"{model_name} AI Task", data=user_input
             )
+
+        try:
+            client = self._get_entry().runtime_data
+            response = await client.models.list()
+            downloaded_models: list[SelectOptionDict] = [
+                SelectOptionDict(
+                    label=model.id,
+                    value=model.id,
+                )
+                for model in response.data
+            ]
+        except OpenAIError as err:
+            _LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            downloaded_models = []
+        except Exception as err:
+            _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            downloaded_models = []
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_MODEL): str
+                    vol.Required(
+                        CONF_MODEL,
+                    ): SelectSelector(
+                        SelectSelectorConfig(options=downloaded_models, custom_value=True)
+                    ),
                 }
             ),
         )

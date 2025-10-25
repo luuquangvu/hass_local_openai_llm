@@ -4,6 +4,7 @@
       "user": {
         "title": "Configure Local OpenAI Server",
         "data": {
+          "server_name": "Server Name",
           "base_url": "Server URL",
           "api_key": "API key"
         }
