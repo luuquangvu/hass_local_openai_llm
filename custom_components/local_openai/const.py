@@ -10,6 +10,7 @@ LOGGER = logging.getLogger(__package__)
 
 CONF_RECOMMENDED = "recommended"
 CONF_BASE_URL = 'base_url'
+CONF_SERVER_NAME = 'server_name'
 CONF_STRIP_EMOJIS = 'strip_emojis'
 CONF_MANUAL_PROMPTING = 'manual_prompting'
 CONF_MAX_MESSAGE_HISTORY = 'max_message_history'
