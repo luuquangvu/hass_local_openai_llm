@@ -150,7 +150,6 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             {
                 vol.Required(
                     CONF_MODEL,
-                    default=options.get(CONF_MODEL),
                 ): SelectSelector(
                     SelectSelectorConfig(options=downloaded_models, custom_value=True)
                 ),
