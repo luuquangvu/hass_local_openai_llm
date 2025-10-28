@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable
 import json
 import base64
-from typing import TYPE_CHECKING, Any, Literal
+import mimetypes
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import demoji
 import asyncio
@@ -24,6 +25,7 @@ from openai.types.chat import (
     ChatCompletionContentPartParam,
     ChatCompletionContentPartTextParam,
     ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartInputAudioParam,
 )
 
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
@@ -48,11 +50,44 @@ from .const import (
     CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
     CONF_TEMPERATURE,
+    GEMINI_MODELS,
 )
 from .prompt import format_custom_prompt
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
+
+AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/mpeg3": "mp3",
+    "audio/x-mpeg-3": "mp3",
+    "audio/x-mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/vnd.wave": "wav",
+}
+
+
+def _is_gemini_model(model: str | None) -> bool:
+    """Return True if the model is identified as a Gemini model."""
+    if not model:
+        return False
+    model_name = model.lower()
+    return any(identifier in model_name for identifier in GEMINI_MODELS)
+
+
+def _attachment_supported(mime_type: str, model: str | None) -> bool:
+    """Validate whether the attachment MIME type is supported for the active model."""
+    mime_type = mime_type.lower()
+
+    if mime_type.startswith("image/") or mime_type == "application/pdf":
+        return True
+
+    if _is_gemini_model(model) and mime_type.startswith(("audio/", "video/", "text/")):
+        return True
+
+    return False
 
 
 def _adjust_schema(schema: dict[str, Any]) -> None:
@@ -212,6 +247,7 @@ def b64_file(file_path):
 
 async def _convert_content_to_chat_message(
     content: conversation.Content,
+    model: str | None = None,
 ) -> ChatCompletionMessageParam | None:
     """Convert any native chat message for this agent to the native format."""
     if isinstance(content, conversation.ToolResultContent):
@@ -225,37 +261,72 @@ async def _convert_content_to_chat_message(
     if role == "system" and content.content:
         return ChatCompletionSystemMessageParam(role="system", content=content.content)
 
-    if role == "user" and content.content:
-        messages = []
+    if role == "user":
+        content_parts: list[ChatCompletionContentPartParam] = []
+        attachments = getattr(content, "attachments", None) or ()
 
-        if content.attachments:
+        if attachments:
             loop = asyncio.get_running_loop()
-            for attachment in content.attachments or ():
-                if not attachment.mime_type.startswith("image/"):
+            for attachment in attachments:
+                raw_mime_type = (
+                    attachment.mime_type
+                    or mimetypes.guess_type(str(attachment.path))[0]
+                    or "application/octet-stream"
+                )
+
+                if not _attachment_supported(raw_mime_type, model):
                     raise HomeAssistantError(
                         translation_domain=DOMAIN,
                         translation_key="unsupported_attachment_type",
                     )
+
                 base64_file = await loop.run_in_executor(
                     None, b64_file, attachment.path
                 )
-                messages.append(
-                    ChatCompletionContentPartImageParam(
-                        type="image_url",
-                        image_url={
-                            "url": f"data:{attachment.mime_type};base64,{base64_file}",
-                            "detail": "auto",
+                mime_type = raw_mime_type.lower()
+
+                if mime_type.startswith("image/"):
+                    content_parts.append(
+                        ChatCompletionContentPartImageParam(
+                            type="image_url",
+                            image_url={
+                                "url": f"data:{raw_mime_type};base64,{base64_file}",
+                                "detail": "auto",
+                            },
+                        )
+                    )
+                    continue
+
+                if (audio_format := AUDIO_MIME_TYPE_MAP.get(mime_type)) is not None:
+                    content_parts.append(
+                        ChatCompletionContentPartInputAudioParam(
+                            type="input_audio",
+                            input_audio={"format": audio_format, "data": base64_file},
+                        )
+                    )
+                    continue
+
+                content_parts.append(
+                    cast(
+                        ChatCompletionContentPartParam,
+                        {
+                            "type": "file",
+                            "file": {
+                                "file_data": base64_file,
+                                "filename": attachment.path.name,
+                            },
                         },
                     )
                 )
 
-        messages.append(
-            ChatCompletionContentPartTextParam(type="text", text=content.content)
-        )
-        return ChatCompletionUserMessageParam(
-            role="user",
-            content=messages,
-        )
+        if content.content:
+            content_parts.append(
+                ChatCompletionContentPartTextParam(type="text", text=content.content)
+            )
+
+        if content_parts:
+            return ChatCompletionUserMessageParam(role="user", content=content_parts)
+        return None
 
     if role == "assistant":
         param = ChatCompletionAssistantMessageParam(
@@ -402,7 +473,7 @@ class LocalAiEntity(Entity):
             [
                 m
                 for content in chat_log.content
-                if (m := await _convert_content_to_chat_message(content))
+                if (m := await _convert_content_to_chat_message(content, self.model))
             ],
             max_message_history,
         )
@@ -465,7 +536,11 @@ class LocalAiEntity(Entity):
                             self.entity_id,
                             _transform_stream(result_stream, strip_emojis),
                         )
-                        if (msg := await _convert_content_to_chat_message(content))
+                        if (
+                            msg := await _convert_content_to_chat_message(
+                                content, self.model
+                            )
+                        )
                     ]
                 )
             except Exception as err:  # pylint: disable=broad-except

@@ -105,5 +105,8 @@
         }
       }
     }
+  },
+  "exceptions": {
+    "unsupported_attachment_type": "This model does not support the attached file type."
   }
 }
