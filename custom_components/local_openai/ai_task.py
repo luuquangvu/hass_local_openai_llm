@@ -83,9 +83,7 @@ class LocalAITaskEntity(
         try:
             data = json_loads(text)
         except JSONDecodeError as err:
-            raise HomeAssistantError(
-                "Error with structured response"
-            ) from err
+            raise HomeAssistantError("Error with structured response") from err
 
         return ai_task.GenDataTaskResult(
             conversation_id=chat_log.conversation_id,

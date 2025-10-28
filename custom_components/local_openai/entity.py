@@ -41,7 +41,14 @@ from homeassistant.helpers import device_registry as dr, llm
 from homeassistant.helpers.entity import Entity
 
 from . import LocalAiConfigEntry
-from .const import DOMAIN, LOGGER, CONF_STRIP_EMOJIS, CONF_MANUAL_PROMPTING, CONF_MAX_MESSAGE_HISTORY, CONF_TEMPERATURE
+from .const import (
+    DOMAIN,
+    LOGGER,
+    CONF_STRIP_EMOJIS,
+    CONF_MANUAL_PROMPTING,
+    CONF_MAX_MESSAGE_HISTORY,
+    CONF_TEMPERATURE,
+)
 from .prompt import format_custom_prompt
 
 # Max number of back and forth with the LLM to generate a response
@@ -102,7 +109,9 @@ def _format_tool(
         name=tool.name,
         parameters=convert(tool.parameters, custom_serializer=custom_serializer),
     )
-    tool_spec["description"] = tool.description if tool.description.strip() else "A callable function"
+    tool_spec["description"] = (
+        tool.description if tool.description.strip() else "A callable function"
+    )
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
 
 
@@ -227,7 +236,9 @@ async def _convert_content_to_chat_message(
                         translation_domain=DOMAIN,
                         translation_key="unsupported_attachment_type",
                     )
-                base64_file = await loop.run_in_executor(None, b64_file, attachment.path)
+                base64_file = await loop.run_in_executor(
+                    None, b64_file, attachment.path
+                )
                 messages.append(
                     ChatCompletionContentPartImageParam(
                         type="image_url",
@@ -238,7 +249,9 @@ async def _convert_content_to_chat_message(
                     )
                 )
 
-        messages.append(ChatCompletionContentPartTextParam(type="text", text=content.content))
+        messages.append(
+            ChatCompletionContentPartTextParam(type="text", text=content.content)
+        )
         return ChatCompletionUserMessageParam(
             role="user",
             content=messages,
@@ -304,7 +317,9 @@ async def _transform_stream(
             chunk["tool_calls"] = [
                 llm.ToolInput(
                     tool_name=current_tool_call["name"],
-                    tool_args=json.loads(current_tool_call["args"]) if current_tool_call["args"] else {},
+                    tool_args=json.loads(current_tool_call["args"])
+                    if current_tool_call["args"]
+                    else {},
                 )
             ]
             current_tool_call = None
@@ -314,7 +329,7 @@ async def _transform_stream(
             if current_tool_call is None:
                 current_tool_call = {
                     "name": tool_call.function.name,
-                    "args": tool_call.function.arguments or ""
+                    "args": tool_call.function.arguments or "",
                 }
             else:
                 current_tool_call["args"] += tool_call.function.arguments
@@ -341,8 +356,9 @@ async def _transform_stream(
             if seen_visible:
                 chunk["content"] = content
 
-        if seen_visible or chunk.get('tool_calls') or chunk.get('role'):
+        if seen_visible or chunk.get("tool_calls") or chunk.get("role"):
             yield chunk
+
 
 class LocalAiEntity(Entity):
     """Base entity for Open Router."""
@@ -458,7 +474,6 @@ class LocalAiEntity(Entity):
             if not chat_log.unresponded_tool_results:
                 break
 
-
     async def _async_handle_image_response(
         self,
         chat_log: conversation.ChatLog,
@@ -534,7 +549,6 @@ class LocalAiEntity(Entity):
             )
         )
 
-
     @staticmethod
     def _trim_history(messages: list, max_messages: int) -> list:
         """Trims excess messages from a single history.
@@ -558,7 +572,7 @@ class LocalAiEntity(Entity):
             drop_index = len(messages) - num_keep
             messages = [
                 messages[0],
-                *messages[int(drop_index):],
+                *messages[int(drop_index) :],
             ]
 
         return messages
