@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.json import json_loads
 
 from . import LocalAiConfigEntry
-from .const import IMAGE_CAPABLE_MODELS
+from .const import GEMINI_MODELS
 from .entity import LocalAiEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class LocalAITaskEntity(
             | ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
         )
         model_name = self.model.lower()
-        if any(model_id in model_name for model_id in IMAGE_CAPABLE_MODELS):
+        if any(model_id in model_name for model_id in GEMINI_MODELS):
             features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
         self._attr_supported_features = features
 

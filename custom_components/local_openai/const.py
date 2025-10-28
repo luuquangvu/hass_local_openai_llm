@@ -16,7 +16,7 @@ CONF_MANUAL_PROMPTING = "manual_prompting"
 CONF_MAX_MESSAGE_HISTORY = "max_message_history"
 CONF_TEMPERATURE = "temperature"
 
-IMAGE_CAPABLE_MODELS = (
+GEMINI_MODELS = (
     "gemini-2.5-flash",
     "gemini-2.5-pro",
 )
