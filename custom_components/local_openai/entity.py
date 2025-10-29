@@ -80,17 +80,8 @@ def _strip_markdown_emphasis(text: str) -> str:
         inner = match.group(1)
         start, end = match.span()
 
-        prev_char: str | None = None
-        for idx in range(start - 1, -1, -1):
-            if not text[idx].isspace():
-                prev_char = text[idx]
-                break
-
-        next_char: str | None = None
-        for idx in range(end, len(text)):
-            if not text[idx].isspace():
-                next_char = text[idx]
-                break
+        prev_char: str | None = text[start - 1] if start > 0 else None
+        next_char: str | None = text[end] if end < len(text) else None
 
         if (
             prev_char is not None
