@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator, Callable
 import json
 import base64
 import mimetypes
-import re
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import demoji
@@ -70,30 +69,55 @@ AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
     "audio/vnd.wave": "wav",
 }
 
-EMPHASIS_PATTERN = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", re.DOTALL)
+
+def _should_strip_emphasis(inner: str) -> bool:
+    """Return True if the emphasis markers should be removed."""
+    trimmed = inner.strip()
+    if not trimmed:
+        return True
+    if inner != trimmed:
+        return False
+    if all(ch.isdigit() or ch.isspace() for ch in trimmed):
+        return False
+    return True
+
+
+def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
+    """Strip emphasis markers from the buffer and return remaining text."""
+    output_parts: list[str] = []
+    idx = 0
+    length = len(buffer)
+
+    while idx < length:
+        start = buffer.find("**", idx)
+        if start == -1:
+            output_parts.append(buffer[idx:])
+            return "".join(output_parts), ""
+
+        output_parts.append(buffer[idx:start])
+        end = buffer.find("**", start + 2)
+
+        if end == -1:
+            if flush:
+                output_parts.append(buffer[start:])
+                return "".join(output_parts), ""
+            return "".join(output_parts), buffer[start:]
+
+        inner = buffer[start + 2 : end]
+        if _should_strip_emphasis(inner):
+            output_parts.append(inner)
+        else:
+            output_parts.append(buffer[start : end + 2])
+
+        idx = end + 2
+
+    return "".join(output_parts), ""
 
 
 def _strip_markdown_emphasis(text: str) -> str:
     """Remove Markdown bold markers while avoiding math/operator usage."""
-
-    def _replacement(match: re.Match[str]) -> str:
-        inner = match.group(1)
-        start, end = match.span()
-
-        prev_char: str | None = text[start - 1] if start > 0 else None
-        next_char: str | None = text[end] if end < len(text) else None
-
-        if (
-            prev_char is not None
-            and next_char is not None
-            and prev_char.isalnum()
-            and next_char.isalnum()
-        ):
-            return match.group(0)
-
-        return inner
-
-    return EMPHASIS_PATTERN.sub(_replacement, text)
+    cleaned, _ = _consume_emphasis(text, flush=True)
+    return cleaned
 
 
 def _is_gemini_model(model: str | None) -> bool:
@@ -398,6 +422,7 @@ async def _transform_stream(
     seen_visible = False
     loop = asyncio.get_running_loop()
     current_tool_call: dict | None = None
+    pending_emphasis: str = ""
 
     async for event in stream:
         chunk: conversation.AssistantContentDeltaDict = {}
@@ -411,6 +436,7 @@ async def _transform_stream(
         if new_msg:
             chunk["role"] = delta.role
             new_msg = False
+            pending_emphasis = ""
 
         if choice.finish_reason and current_tool_call:
             chunk["tool_calls"] = [
@@ -433,29 +459,50 @@ async def _transform_stream(
             else:
                 current_tool_call["args"] += tool_call.function.arguments
 
+        content_segments: list[str] = []
+
         if (content := delta.content) is not None:
             if strip_emojis:
                 content = await loop.run_in_executor(None, demoji.replace, content, "")
             if strip_emphasis and content:
-                content = _strip_markdown_emphasis(content)
+                pending_emphasis += content
+                content, pending_emphasis = _consume_emphasis(
+                    pending_emphasis, flush=False
+                )
+            elif not strip_emphasis:
+                pending_emphasis = ""
+            else:
+                content = ""
 
-            if content == "<think>":
+            if content:
+                content_segments.append(content)
+
+        if strip_emphasis and choice.finish_reason and pending_emphasis:
+            flushed, pending_emphasis = _consume_emphasis(pending_emphasis, flush=True)
+            if flushed:
+                content_segments.append(flushed)
+
+        combined_output = ""
+        for segment in content_segments:
+            if segment == "<think>":
                 in_think = True
                 pending_think = ""
 
             if in_think:
-                if content == "</think>":
+                if segment == "</think>":
                     in_think = False
                     if pending_think.strip():
                         LOGGER.debug(f"LLM Thought: {pending_think}")
                     pending_think = ""
-                elif content != "<think>":
-                    pending_think = pending_think + content
-            elif content.strip():
+                elif segment != "<think>":
+                    pending_think = pending_think + segment
+            elif segment.strip():
                 seen_visible = True
 
-            if seen_visible:
-                chunk["content"] = content
+            combined_output += segment
+
+        if seen_visible and combined_output:
+            chunk["content"] = combined_output
 
         if seen_visible or chunk.get("tool_calls") or chunk.get("role"):
             yield chunk
