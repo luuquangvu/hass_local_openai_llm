@@ -35,6 +35,7 @@ from .const import (
     RECOMMENDED_CONVERSATION_OPTIONS,
     CONF_BASE_URL,
     CONF_STRIP_EMOJIS,
+    CONF_STRIP_EMPHASIS,
     CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
     CONF_TEMPERATURE,
@@ -171,6 +172,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 vol.Optional(
                     CONF_STRIP_EMOJIS,
                     default=options.get(CONF_STRIP_EMOJIS, False),
+                ): bool,
+                vol.Optional(
+                    CONF_STRIP_EMPHASIS,
+                    default=options.get(CONF_STRIP_EMPHASIS, False),
                 ): bool,
                 vol.Optional(
                     CONF_MANUAL_PROMPTING,

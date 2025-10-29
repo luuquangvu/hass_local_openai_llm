@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, Callable
 import json
 import base64
 import mimetypes
+import re
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import demoji
@@ -47,6 +48,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     CONF_STRIP_EMOJIS,
+    CONF_STRIP_EMPHASIS,
     CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
     CONF_TEMPERATURE,
@@ -67,6 +69,40 @@ AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
     "audio/x-wav": "wav",
     "audio/vnd.wave": "wav",
 }
+
+EMPHASIS_PATTERN = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", re.DOTALL)
+
+
+def _strip_markdown_emphasis(text: str) -> str:
+    """Remove Markdown bold markers while avoiding math/operator usage."""
+
+    def _replacement(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        start, end = match.span()
+
+        prev_char: str | None = None
+        for idx in range(start - 1, -1, -1):
+            if not text[idx].isspace():
+                prev_char = text[idx]
+                break
+
+        next_char: str | None = None
+        for idx in range(end, len(text)):
+            if not text[idx].isspace():
+                next_char = text[idx]
+                break
+
+        if (
+            prev_char is not None
+            and next_char is not None
+            and prev_char.isalnum()
+            and next_char.isalnum()
+        ):
+            return match.group(0)
+
+        return inner
+
+    return EMPHASIS_PATTERN.sub(_replacement, text)
 
 
 def _is_gemini_model(model: str | None) -> bool:
@@ -361,6 +397,7 @@ def _decode_tool_arguments(arguments: str) -> Any:
 async def _transform_stream(
     stream: AsyncStream[ChatCompletionChunk],
     strip_emojis: bool,
+    strip_emphasis: bool,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a streaming OpenAI response to ChatLog format."""
 
@@ -408,6 +445,8 @@ async def _transform_stream(
         if (content := delta.content) is not None:
             if strip_emojis:
                 content = await loop.run_in_executor(None, demoji.replace, content, "")
+            if strip_emphasis and content:
+                content = _strip_markdown_emphasis(content)
 
             if content == "<think>":
                 in_think = True
@@ -458,7 +497,8 @@ class LocalAiEntity(Entity):
     ) -> None:
         """Generate an answer for the chat log."""
         options = self.subentry.data
-        strip_emojis = options.get(CONF_STRIP_EMOJIS)
+        strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
+        strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 0.6)
 
@@ -492,7 +532,8 @@ class LocalAiEntity(Entity):
             await self._async_handle_image_response(
                 chat_log,
                 messages,
-                bool(strip_emojis),
+                strip_emojis,
+                strip_emphasis,
                 temperature,
             )
             return
@@ -534,7 +575,9 @@ class LocalAiEntity(Entity):
                         msg
                         async for content in chat_log.async_add_delta_content_stream(
                             self.entity_id,
-                            _transform_stream(result_stream, strip_emojis),
+                            _transform_stream(
+                                result_stream, strip_emojis, strip_emphasis
+                            ),
                         )
                         if (
                             msg := await _convert_content_to_chat_message(
@@ -554,6 +597,7 @@ class LocalAiEntity(Entity):
         chat_log: conversation.ChatLog,
         messages: list[ChatCompletionMessageParam],
         strip_emojis: bool,
+        strip_emphasis: bool,
         temperature: float,
     ) -> None:
         """Generate an image response using the Responses API."""
@@ -602,6 +646,8 @@ class LocalAiEntity(Entity):
             text_output = text_output.strip()
         if strip_emojis and text_output:
             text_output = demoji.replace(text_output, "")
+        if strip_emphasis and text_output:
+            text_output = _strip_markdown_emphasis(text_output)
         if text_output == "":
             text_output = None
 
