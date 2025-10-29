@@ -77,8 +77,6 @@ def _should_strip_emphasis(inner: str) -> bool:
         return True
     if inner != trimmed:
         return False
-    if all(ch.isdigit() or ch.isspace() for ch in trimmed):
-        return False
     return True
 
 
