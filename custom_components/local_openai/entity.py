@@ -15,7 +15,6 @@ from openai._streaming import AsyncStream
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionFunctionToolParam,
-    ChatCompletionMessage,
     ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
