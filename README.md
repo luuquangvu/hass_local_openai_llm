@@ -10,7 +10,7 @@
 
 Have [HACS](https://hacs.xyz/) installed, this will allow you to update easily.
 
-Adding Tools for Assist to HACS can be using this button:
+Adding **Local OpenAI LLM** to HACS can be using this button:
 
 [![image](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=luuquangvu&repository=hass_local_openai_llm&category=integration)
 
