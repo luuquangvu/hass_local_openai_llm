@@ -2,12 +2,12 @@
   "domain": "local_openai",
   "name": "Local OpenAI LLM",
   "after_dependencies": ["assist_pipeline", "intent"],
-  "codeowners": ["@skyeharris"],
+  "codeowners": ["@skyeharris", "@luuquangvu"],
   "config_flow": true,
   "dependencies": ["conversation"],
-  "documentation": "https://github.com/skye-harris/hass_local_openai_llm",
+  "documentation": "https://github.com/luuquangvu/hass_local_openai_llm",
   "integration_type": "service",
   "iot_class": "local_polling",
   "requirements": ["openai>=1.99.5", "demoji>=1.1.0", "webcolors>=24.8.0"],
-  "version": "1.0.4"
+  "version": "1.0.0"
 }
