@@ -171,11 +171,11 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 ),
                 vol.Optional(
                     CONF_STRIP_EMOJIS,
-                    default=options.get(CONF_STRIP_EMOJIS, False),
+                    default=options.get(CONF_STRIP_EMOJIS, True),
                 ): bool,
                 vol.Optional(
                     CONF_STRIP_EMPHASIS,
-                    default=options.get(CONF_STRIP_EMPHASIS, False),
+                    default=options.get(CONF_STRIP_EMPHASIS, True),
                 ): bool,
                 vol.Optional(
                     CONF_MANUAL_PROMPTING,
@@ -183,10 +183,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 ): bool,
                 vol.Optional(
                     CONF_TEMPERATURE,
-                    default=options.get(CONF_TEMPERATURE, 0.6),
+                    default=options.get(CONF_TEMPERATURE, 1),
                 ): NumberSelector(
                     NumberSelectorConfig(
-                        min=0, max=1, step=0.01, mode=NumberSelectorMode.BOX
+                        min=0, max=1, step=0.05, mode=NumberSelectorMode.SLIDER
                     )
                 ),
                 vol.Optional(
@@ -197,7 +197,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                         min=0,
                         max=50,
                         step=1,
-                        mode=NumberSelectorMode.BOX,
+                        mode=NumberSelectorMode.SLIDER,
                     )
                 ),
             }

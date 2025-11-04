@@ -1,6 +1,6 @@
 # Local OpenAI LLM _(Custom Integration for Home Assistant)_
 
-**This integration is forked from the [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) integration, with an emphasis on supporting Gemini-FastAPI.**
+**This integration is forked from the [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) integration by [@skye-harris](https://github.com/skye-harris), with a focus on supporting Gemini-FastAPI.**
 
 ---
 
