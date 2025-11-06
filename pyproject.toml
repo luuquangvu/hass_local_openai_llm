@@ -1,0 +1,12 @@
+[project]
+name = "local_openai"
+version = "1.0.0"
+description = "Local OpenAI LLM"
+readme = "README.md"
+requires-python = "==3.14.*"
+dependencies = [
+    "homeassistant",
+    "openai",
+    "demoji",
+    "webcolors",
+]
