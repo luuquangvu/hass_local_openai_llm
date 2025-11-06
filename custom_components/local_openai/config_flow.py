@@ -208,8 +208,6 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
-            if not user_input.get(CONF_LLM_HASS_API):
-                user_input.pop(CONF_LLM_HASS_API, None)
             model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
             return self.async_create_entry(
                 title=f"{model_name} AI Agent", data=user_input
@@ -225,8 +223,6 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
-            if not user_input.get(CONF_LLM_HASS_API):
-                user_input.pop(CONF_LLM_HASS_API, None)
             return self.async_update_and_abort(
                 self._get_entry(),
                 self._get_reconfigure_subentry(),
