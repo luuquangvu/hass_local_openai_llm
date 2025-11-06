@@ -153,11 +153,15 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
+        default_model = options.get(CONF_MODEL)
+        default_title = self.strip_model_pathing(default_model) if default_model else "Local"
+        default_name = options.get(CONF_NAME) or f"{default_title} AI Agent"
+
         return vol.Schema(
             {
                 vol.Optional(
                     CONF_NAME,
-                    default=options.get(CONF_NAME, ""),
+                    default=default_name,
                 ): str,
                 vol.Required(
                     CONF_MODEL,
@@ -305,13 +309,18 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
             _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
+        default_model = (
+            downloaded_models[0].value if downloaded_models else "Local"
+        )
+        default_name = f"{self.strip_model_pathing(default_model)} AI Task"
+
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
                         CONF_NAME,
-                        default="",
+                        default=default_name,
                     ): str,
                     vol.Required(
                         CONF_MODEL,
