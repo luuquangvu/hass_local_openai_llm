@@ -153,10 +153,11 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
-        default_model = options.get(CONF_MODEL)
-        default_title = (
-            self.strip_model_pathing(default_model) if default_model else "Local"
-        )
+        default_model_value = options.get(CONF_MODEL)
+        if not default_model_value and downloaded_models:
+            default_model_value = downloaded_models[0]["value"]
+        default_model = default_model_value or "Local"
+        default_title = self.strip_model_pathing(default_model)
         default_name = options.get(CONF_NAME) or f"{default_title} AI Agent"
 
         return vol.Schema(
@@ -167,6 +168,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 ): str,
                 vol.Required(
                     CONF_MODEL,
+                    default=default_model,
                 ): SelectSelector(
                     SelectSelectorConfig(options=downloaded_models, custom_value=True)
                 ),
@@ -311,7 +313,9 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
             _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
-        default_model = downloaded_models[0].value if downloaded_models else "Local"
+        default_model = (
+            downloaded_models[0].get("value") if downloaded_models else "Local"
+        )
         default_name = f"{self.strip_model_pathing(default_model)} AI Task"
 
         return self.async_show_form(
@@ -324,6 +328,7 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
                     ): str,
                     vol.Required(
                         CONF_MODEL,
+                        default=default_model,
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=downloaded_models, custom_value=True
