@@ -30,7 +30,7 @@
             "strip_emojis": "Strip emojis from response",
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
-            "max_message_history": "Max message history size",
+            "max_message_history": "Max message history size (0 for no limit)",
             "manual_prompting": "Full manual prompting"
           },
           "data_description": {
@@ -47,7 +47,7 @@
             "strip_emojis": "Strip emojis from response",
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
-            "max_message_history": "Max message history size",
+            "max_message_history": "Max message history size (0 for no limit)",
             "manual_prompting": "Full manual prompting"
           },
           "data_description": {
@@ -96,7 +96,7 @@
           "strip_emojis": "Strip emojis from response",
           "suggested_value": "Suggested value",
           "temperature": "Temperature",
-          "max_message_history": "Max message history size",
+          "max_message_history": "Max message history size (0 for no limit)",
           "manual_prompting": "Full manual prompting"
         },
         "data_description": {

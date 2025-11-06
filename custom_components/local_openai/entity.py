@@ -224,7 +224,7 @@ async def _transform_stream(
                     "name": tool_call.function.name,
                     "args": tool_call.function.arguments or ""
                 }
-            else:
+            elif tool_call.function.arguments is not None:
                 current_tool_call["args"] += tool_call.function.arguments
 
         if (content := delta.content) is not None:
