@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, Callable
 import json
 import base64
 import mimetypes
+import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import demoji
@@ -69,14 +70,40 @@ AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
 }
 
 
-def _should_strip_emphasis(inner: str) -> bool:
+def _is_punctuation(char: str) -> bool:
+    """Return True if the character is a punctuation mark."""
+    return bool(char) and unicodedata.category(char).startswith("P")
+
+
+def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
     """Return True if the emphasis markers should be removed."""
     trimmed = inner.strip()
     if not trimmed:
         return True
-    if inner != trimmed:
-        return False
-    return True
+
+    if inner == trimmed:
+        return True
+
+    leading_ws = inner[: len(inner) - len(inner.lstrip())]
+    trailing_ws = inner[len(inner.rstrip()) :]
+
+    if (
+        trailing_ws
+        and not leading_ws
+        and trailing_ws.strip() == ""
+        and _is_punctuation(following)
+    ):
+        return True
+
+    if (
+        leading_ws
+        and not trailing_ws
+        and leading_ws.strip() == ""
+        and _is_punctuation(previous)
+    ):
+        return True
+
+    return False
 
 
 def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
@@ -101,7 +128,10 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
             return "".join(output_parts), buffer[start:]
 
         inner = buffer[start + 2 : end]
-        if _should_strip_emphasis(inner):
+        prev_char = buffer[start - 1] if start > 0 else ""
+        next_index = end + 2
+        next_char = buffer[next_index] if next_index < length else ""
+        if _should_strip_emphasis(inner, prev_char, next_char):
             output_parts.append(inner)
         else:
             output_parts.append(buffer[start : end + 2])
