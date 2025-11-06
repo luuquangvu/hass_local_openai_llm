@@ -193,7 +193,7 @@ async def _transform_stream(
     in_think = False
     seen_visible = False
     loop = asyncio.get_running_loop()
-    current_tool_call: dict | None = None
+    pending_tool_calls: list[dict] = []
 
     async for event in stream:
         chunk: conversation.AssistantContentDeltaDict = {}
@@ -208,24 +208,24 @@ async def _transform_stream(
             chunk["role"] = delta.role
             new_msg = False
 
-        if choice.finish_reason and current_tool_call:
+        if choice.finish_reason and pending_tool_calls:
             chunk["tool_calls"] = [
                 llm.ToolInput(
-                    tool_name=current_tool_call["name"],
-                    tool_args=json.loads(current_tool_call["args"]) if current_tool_call["args"] else {},
-                )
+                    tool_name=tool_call["name"],
+                    tool_args=json.loads(tool_call["args"]) if tool_call["args"] else {},
+                ) for tool_call in pending_tool_calls
             ]
-            current_tool_call = None
+            pending_tool_calls = []
 
         if (tool_calls := delta.tool_calls) is not None and tool_calls:
             tool_call = tool_calls[0]
-            if current_tool_call is None:
-                current_tool_call = {
+            if len(pending_tool_calls) < tool_call.index + 1:
+                pending_tool_calls.append({
                     "name": tool_call.function.name,
                     "args": tool_call.function.arguments or ""
-                }
-            elif tool_call.function.arguments is not None:
-                current_tool_call["args"] += tool_call.function.arguments
+                })
+            else:
+                pending_tool_calls[tool_call.index]["args"] += tool_call.function.arguments
 
         if (content := delta.content) is not None:
             if strip_emojis:
