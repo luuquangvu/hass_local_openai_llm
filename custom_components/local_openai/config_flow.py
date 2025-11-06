@@ -16,7 +16,13 @@ from homeassistant.config_entries import (
     ConfigSubentryFlow,
     SubentryFlowResult,
 )
-from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
+from homeassistant.const import (
+    CONF_API_KEY,
+    CONF_LLM_HASS_API,
+    CONF_MODEL,
+    CONF_NAME,
+    CONF_PROMPT,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import llm
 from homeassistant.helpers.httpx_client import get_async_client
@@ -149,6 +155,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
 
         return vol.Schema(
             {
+                vol.Optional(
+                    CONF_NAME,
+                    default=options.get(CONF_NAME, ""),
+                ): str,
                 vol.Required(
                     CONF_MODEL,
                 ): SelectSelector(
@@ -208,10 +218,18 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
+            user_input = user_input.copy()
+            raw_name = user_input.get(CONF_NAME)
+            custom_name = raw_name.strip() if isinstance(raw_name, str) else None
+            if custom_name:
+                user_input[CONF_NAME] = custom_name
+            else:
+                user_input.pop(CONF_NAME, None)
+
             model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
-            return self.async_create_entry(
-                title=f"{model_name} AI Agent", data=user_input
-            )
+            entry_title = custom_name or f"{model_name} AI Agent"
+
+            return self.async_create_entry(title=entry_title, data=user_input)
 
         return self.async_show_form(
             step_id="user",
@@ -223,9 +241,21 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
+            user_input = user_input.copy()
+            raw_name = user_input.get(CONF_NAME)
+            custom_name = raw_name.strip() if isinstance(raw_name, str) else None
+            if custom_name:
+                user_input[CONF_NAME] = custom_name
+            else:
+                user_input.pop(CONF_NAME, None)
+
+            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
+            entry_title = custom_name or f"{model_name} AI Agent"
+
             return self.async_update_and_abort(
                 self._get_entry(),
                 self._get_reconfigure_subentry(),
+                title=entry_title,
                 data=user_input,
             )
 
@@ -245,10 +275,18 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
+            user_input = user_input.copy()
+            raw_name = user_input.get(CONF_NAME)
+            custom_name = raw_name.strip() if isinstance(raw_name, str) else None
+            if custom_name:
+                user_input[CONF_NAME] = custom_name
+            else:
+                user_input.pop(CONF_NAME, None)
+
             model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
-            return self.async_create_entry(
-                title=f"{model_name} AI Task", data=user_input
-            )
+            entry_title = custom_name or f"{model_name} AI Task"
+
+            return self.async_create_entry(title=entry_title, data=user_input)
 
         try:
             client = self._get_entry().runtime_data
@@ -271,6 +309,10 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
             step_id="user",
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_NAME,
+                        default="",
+                    ): str,
                     vol.Required(
                         CONF_MODEL,
                     ): SelectSelector(

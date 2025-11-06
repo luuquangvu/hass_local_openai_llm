@@ -469,7 +469,9 @@ async def _transform_stream(
             chunk["tool_calls"] = [
                 llm.ToolInput(
                     tool_name=tool_call["name"],
-                    tool_args=json.loads(tool_call["args"]) if tool_call["args"] else {},
+                    tool_args=json.loads(tool_call["args"])
+                    if tool_call["args"]
+                    else {},
                 )
                 for tool_call in pending_tool_calls
                 if tool_call["name"]
