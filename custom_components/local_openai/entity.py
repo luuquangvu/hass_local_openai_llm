@@ -448,7 +448,7 @@ async def _transform_stream(
     in_think = False
     seen_visible = False
     loop = asyncio.get_running_loop()
-    current_tool_call: dict | None = None
+    pending_tool_calls: list[dict] = []
     pending_emphasis: str = ""
 
     async for event in stream:
@@ -465,26 +465,29 @@ async def _transform_stream(
             new_msg = False
             pending_emphasis = ""
 
-        if choice.finish_reason and current_tool_call:
+        if choice.finish_reason and pending_tool_calls:
             chunk["tool_calls"] = [
                 llm.ToolInput(
-                    tool_name=current_tool_call["name"],
-                    tool_args=json.loads(current_tool_call["args"])
-                    if current_tool_call["args"]
-                    else {},
+                    tool_name=tool_call["name"],
+                    tool_args=json.loads(tool_call["args"]) if tool_call["args"] else {},
                 )
+                for tool_call in pending_tool_calls
+                if tool_call["name"]
             ]
-            current_tool_call = None
+            pending_tool_calls = []
 
         if (tool_calls := delta.tool_calls) is not None and tool_calls:
-            tool_call = tool_calls[0]
-            if current_tool_call is None:
-                current_tool_call = {
-                    "name": tool_call.function.name,
-                    "args": tool_call.function.arguments or "",
-                }
-            elif tool_call.function.arguments is not None:
-                current_tool_call["args"] += tool_call.function.arguments
+            for tool_call in tool_calls:
+                index = tool_call.index or 0
+                while len(pending_tool_calls) <= index:
+                    pending_tool_calls.append({"name": "", "args": ""})
+
+                entry = pending_tool_calls[index]
+                if not entry["name"]:
+                    entry["name"] = tool_call.function.name
+
+                if tool_call.function.arguments:
+                    entry["args"] += tool_call.function.arguments
 
         content_segments: list[str] = []
 
