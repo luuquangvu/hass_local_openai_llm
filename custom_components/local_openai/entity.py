@@ -91,7 +91,7 @@ def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
         trailing_ws
         and not leading_ws
         and trailing_ws.strip() == ""
-        and _is_punctuation(following)
+        and (_is_punctuation(following) or following.isspace() or not following)
     ):
         return True
 
@@ -99,7 +99,7 @@ def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
         leading_ws
         and not trailing_ws
         and leading_ws.strip() == ""
-        and _is_punctuation(previous)
+        and (_is_punctuation(previous) or previous.isspace() or not previous)
     ):
         return True
 
