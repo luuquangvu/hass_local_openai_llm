@@ -40,7 +40,15 @@ from homeassistant.helpers import device_registry as dr, llm
 from homeassistant.helpers.entity import Entity
 
 from . import LocalAiConfigEntry
-from .const import DOMAIN, LOGGER, CONF_STRIP_EMOJIS, CONF_MANUAL_PROMPTING, CONF_MAX_MESSAGE_HISTORY, CONF_TEMPERATURE
+from .const import (
+    DOMAIN,
+    LOGGER,
+    CONF_STRIP_EMOJIS,
+    CONF_MANUAL_PROMPTING,
+    CONF_MAX_MESSAGE_HISTORY,
+    CONF_TEMPERATURE,
+    CONF_PARALLEL_TOOL_CALLS
+)
 from .prompt import format_custom_prompt
 
 # Max number of back and forth with the LLM to generate a response
@@ -281,11 +289,13 @@ class LocalAiEntity(Entity):
         strip_emojis = options.get(CONF_STRIP_EMOJIS)
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 0.6)
+        parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
 
         model_args = {
             "model": self.model,
             "user": chat_log.conversation_id,
             "temperature": temperature,
+            "parallel_tool_calls": parallel_tool_calls,
         }
 
         tools: list[ChatCompletionFunctionToolParam] | None = None
