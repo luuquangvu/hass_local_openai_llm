@@ -32,7 +32,8 @@
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
             "max_message_history": "Max message history size (0 for no limit)",
-            "manual_prompting": "Full manual prompting"
+            "manual_prompting": "Full manual prompting",
+            "parallel_tool_calls": "Parallel function calling"
           },
           "data_description": {
             "model": "The model to use for the conversation agent",
@@ -50,7 +51,8 @@
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
             "max_message_history": "Max message history size (0 for no limit)",
-            "manual_prompting": "Full manual prompting"
+            "manual_prompting": "Full manual prompting",
+            "parallel_tool_calls": "Parallel function calling"
           },
           "data_description": {
             "model": "The model to use for the conversation agent",
@@ -100,7 +102,8 @@
           "suggested_value": "Suggested value",
           "temperature": "Temperature",
           "max_message_history": "Max message history size (0 for no limit)",
-          "manual_prompting": "Full manual prompting"
+          "manual_prompting": "Full manual prompting",
+          "parallel_tool_calls": "Parallel function calling"
         },
         "data_description": {
           "model": "The model to use for the conversation agent",
