@@ -52,6 +52,7 @@ from .const import (
     CONF_MAX_MESSAGE_HISTORY,
     CONF_TEMPERATURE,
     GEMINI_MODELS,
+    CONF_PARALLEL_TOOL_CALLS,
 )
 from .prompt import format_custom_prompt
 
@@ -570,7 +571,15 @@ class LocalAiEntity(Entity):
         strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
         strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
-        temperature = options.get(CONF_TEMPERATURE, 0.6)
+        temperature = options.get(CONF_TEMPERATURE, 1)
+        parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
+
+        model_args = {
+            "model": self.model,
+            "user": chat_log.conversation_id,
+            "temperature": temperature,
+            "parallel_tool_calls": parallel_tool_calls,
+        }
 
         tools: list[ChatCompletionFunctionToolParam] | None = None
         if chat_log.llm_api:

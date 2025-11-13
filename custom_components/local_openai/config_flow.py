@@ -46,6 +46,7 @@ from .const import (
     CONF_MAX_MESSAGE_HISTORY,
     CONF_TEMPERATURE,
     CONF_SERVER_NAME,
+    CONF_PARALLEL_TOOL_CALLS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,8 +127,8 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
 class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
-    async def get_schema(self, options: dict = {}):
-        hass_apis: list[SelectOptionDict] = [
+    def get_has_apis(self) -> list[SelectOptionDict]:
+        return [
             SelectOptionDict(
                 label=api.name,
                 value=api.id,
@@ -135,6 +136,8 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             for api in llm.async_get_apis(self.hass)
         ]
 
+    async def get_schema(self, options: dict = {}):
+        hass_apis = self.get_has_apis()
         client = self._get_entry().runtime_data
 
         try:
@@ -187,6 +190,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 ): SelectSelector(
                     SelectSelectorConfig(options=hass_apis, multiple=True)
                 ),
+                vol.Optional(
+                    CONF_PARALLEL_TOOL_CALLS,
+                    default=options.get(CONF_PARALLEL_TOOL_CALLS, True),
+                ): bool,
                 vol.Optional(
                     CONF_STRIP_EMOJIS,
                     default=options.get(CONF_STRIP_EMOJIS, True),
@@ -268,6 +275,12 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             )
 
         options = self._get_reconfigure_subentry().data.copy()
+
+        # Filter out any tool providers that no longer exist
+        hass_apis = [api.get("value") for api in self.get_has_apis()]
+        options["llm_hass_api"] = [
+            api for api in options.get("llm_hass_api", []) if api in hass_apis
+        ]
 
         return self.async_show_form(
             step_id="reconfigure",
