@@ -669,12 +669,12 @@ class LocalAiEntity(Entity):
             "model": self.model,
             "user": chat_log.conversation_id,
             "temperature": temperature,
+            "parallel_tool_calls": parallel_tool_calls,
             "messages": messages,
         }
 
         if tools:
             model_args["tools"] = tools
-            model_args["parallel_tool_calls"] = parallel_tool_calls
 
         if structure:
             if TYPE_CHECKING:
