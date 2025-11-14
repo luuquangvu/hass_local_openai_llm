@@ -108,6 +108,48 @@ def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
     return False
 
 
+def _process_latex_block_content(
+    buffer: str, start: int, marker: str, flush: bool
+) -> tuple[str, int] | tuple[None, None]:
+    """Processes a LaTeX block, returns content and new index."""
+    end = buffer.find(marker, start + len(marker))
+    if end == -1:
+        if flush:
+            content = buffer[start + len(marker) :]
+            content = content.replace(r"^\circ", "°")
+            content = content.replace(r"\%", "%")
+            content = re.sub(r"\\text\{(.*?)}", r"\1", content)
+            return content, len(buffer)
+        return None, None  # unclosed
+
+    content = buffer[start + len(marker) : end]
+    content = content.replace(r"^\circ", "°")
+    content = content.replace(r"\%", "%")
+    content = re.sub(r"\\text\{(.*?)}", r"\1", content)
+    return content, end + len(marker)
+
+
+def _process_emphasis_block_content(
+    buffer: str, start: int, flush: bool
+) -> tuple[str, int] | tuple[None, None]:
+    """Processes an emphasis block, returns content and new index."""
+    end = buffer.find("**", start + 2)
+    if end == -1:
+        if flush:
+            return buffer[start:], len(buffer)
+        return None, None  # unclosed
+
+    inner = buffer[start + 2 : end]
+    prev_char = buffer[start - 1] if start > 0 else ""
+    length = len(buffer)
+    next_index = end + 2
+    next_char = buffer[next_index] if next_index < length else ""
+    if _should_strip_emphasis(inner, prev_char, next_char):
+        return inner, end + 2
+    else:
+        return buffer[start : end + 2], end + 2
+
+
 def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
     """Strip emphasis markers and simplify LaTeX blocks from the buffer and return remaining text."""
     output_parts: list[str] = []
@@ -131,59 +173,27 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
         output_parts.append(buffer[idx:min_pos])
 
         if min_pos == next_latex_double or min_pos == next_latex_single:
-            # It's a LaTeX block
             marker = "$$" if min_pos == next_latex_double else "$"
-            start = min_pos
-            end = buffer.find(marker, start + len(marker))
-
-            if end == -1:
-                if flush:
-                    # For unclosed blocks when flushing, let's just process the content we have
-                    content = buffer[start + len(marker) :]
-                    content = content.replace(r"^\circ", "°")
-                    content = content.replace(r"\%", "%")
-                    content = re.sub(r"\\text\{(.*?)}", r"\1", content)
-                    output_parts.append(content)
-                    return "".join(output_parts), ""
-                else:
-                    return "".join(output_parts), buffer[start:]
-
-            # We have a LaTeX block. Let's process its content.
-            content = buffer[start + len(marker) : end]
-
-            # Simple LaTeX to text conversion
-            content = content.replace(r"^\circ", "°")
-            content = content.replace(r"\%", "%")
-            content = re.sub(r"\\text\{(.*?)}", r"\1", content)
-
+            content, new_idx = _process_latex_block_content(
+                buffer, min_pos, marker, flush
+            )
+            if content is None:
+                return "".join(output_parts), buffer[min_pos:]
             output_parts.append(content)
-            idx = end + len(marker)
+            idx = new_idx
 
         elif min_pos == next_emphasis:
-            # It's a ** block, strip emphasis
-            start = next_emphasis
-            end = buffer.find("**", start + 2)
-            if end == -1:
-                if flush:
-                    output_parts.append(buffer[start:])
-                    return "".join(output_parts), ""
-                return "".join(output_parts), buffer[start:]
-
-            inner = buffer[start + 2 : end]
-            prev_char = buffer[start - 1] if start > 0 else ""
-            next_index = end + 2
-            next_char = buffer[next_index] if next_index < length else ""
-            if _should_strip_emphasis(inner, prev_char, next_char):
-                output_parts.append(inner)
-            else:
-                output_parts.append(buffer[start : end + 2])
-            idx = end + 2
+            content, new_idx = _process_emphasis_block_content(buffer, min_pos, flush)
+            if content is None:
+                return "".join(output_parts), buffer[min_pos:]
+            output_parts.append(content)
+            idx = new_idx
 
     return "".join(output_parts), ""
 
 
-def _strip_markdown_emphasis(text: str) -> str:
-    """Remove Markdown bold markers while avoiding math/operator usage."""
+def _strip_text_formatting(text: str) -> str:
+    """Remove Markdown bold markers and simplify LaTeX blocks."""
     cleaned, _ = _consume_emphasis(text, flush=True)
     return cleaned
 
@@ -765,7 +775,7 @@ class LocalAiEntity(Entity):
         if strip_emojis and text_output:
             text_output = demoji.replace(text_output, "")
         if strip_emphasis and text_output:
-            text_output = _strip_markdown_emphasis(text_output)
+            text_output = _strip_text_formatting(text_output)
         if text_output == "":
             text_output = None
 
