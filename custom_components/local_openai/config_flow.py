@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import logging
 from typing import Any
 from openai import AsyncOpenAI, OpenAIError
 
@@ -38,6 +37,7 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     DOMAIN,
+    LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
     CONF_BASE_URL,
     CONF_STRIP_EMOJIS,
@@ -48,8 +48,6 @@ from .const import (
     CONF_SERVER_NAME,
     CONF_PARALLEL_TOOL_CALLS,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -72,10 +70,11 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle the initial step."""
+        LOGGER.debug("Config flow: step_user, input: %s", user_input)
         errors = {}
         if user_input is not None:
             self._async_abort_entries_match(user_input)
-            _LOGGER.debug(
+            LOGGER.debug(
                 f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}"
             )
 
@@ -86,16 +85,16 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
                     http_client=get_async_client(self.hass),
                 )
 
-                _LOGGER.debug("Retrieving model list to ensure server is accessible")
+                LOGGER.debug("Retrieving model list to ensure server is accessible")
                 await client.models.list()
             except OpenAIError as err:
-                _LOGGER.exception(f"OpenAI Error: {err}")
+                LOGGER.exception(f"OpenAI Error: {err}")
                 errors["base"] = "cannot_connect"
             except Exception as err:
-                _LOGGER.exception(f"Unexpected exception: {err}")
+                LOGGER.exception(f"Unexpected exception: {err}")
                 errors["base"] = "unknown"
             else:
-                _LOGGER.debug("Server connection verified")
+                LOGGER.debug("Server connection verified")
                 return self.async_create_entry(
                     title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
                     data=user_input,
@@ -149,11 +148,12 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 )
                 for model in response.data
             ]
+            LOGGER.debug("Found models: %s", downloaded_models)
         except OpenAIError as err:
-            _LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
             downloaded_models = []
         except Exception as err:
-            _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
         default_model_value = options.get(CONF_MODEL)
@@ -320,10 +320,10 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
                 for model in response.data
             ]
         except OpenAIError as err:
-            _LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
             downloaded_models = []
         except Exception as err:
-            _LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
         default_model = (

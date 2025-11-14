@@ -19,6 +19,9 @@ type LocalAiConfigEntry = ConfigEntry[AsyncOpenAI]
 
 async def async_setup_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> bool:
     """Set up Local OpenAI LLM from a config entry."""
+    LOGGER.debug(
+        "Creating AsyncOpenAI client for base_url: %s", entry.data[CONF_BASE_URL]
+    )
     client = AsyncOpenAI(
         base_url=entry.data[CONF_BASE_URL],
         api_key=entry.data.get(CONF_API_KEY, ""),
@@ -29,12 +32,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> b
     _ = await hass.async_add_executor_job(client.platform_headers)
 
     try:
-        async for _ in client.with_options(timeout=10.0).models.list():
+        LOGGER.debug("Verifying connection by listing models...")
+        async for model in client.with_options(timeout=10.0).models.list():
+            LOGGER.debug(
+                "Successfully connected. Found at least one model: %s", model.id
+            )
             break
     except AuthenticationError as err:
         LOGGER.error("Invalid API key: %s", err)
         raise ConfigEntryError("Invalid API key") from err
     except OpenAIError as err:
+        LOGGER.warning("Connection to API failed, will retry: %s", err)
         raise ConfigEntryNotReady(err) from err
 
     entry.runtime_data = client

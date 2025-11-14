@@ -10,6 +10,8 @@ from homeassistant.helpers import (
 from webcolors import CSS3
 import webcolors
 
+from .const import LOGGER
+
 
 DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE = [
     "rgb_color",
@@ -165,6 +167,7 @@ def async_get_exposed_entities(hass) -> tuple[dict[str, str], list[str]]:
 
 def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
     devices = async_get_entities(hass)
+    LOGGER.debug("Exposed devices for prompt: %s", devices)
 
     area: ar.AreaEntry | None = None
     floor: fr.FloorEntry | None = None
@@ -181,8 +184,15 @@ def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
                 if area.floor_id:
                     floor = floor_reg.async_get_floor(area.floor_id)
 
+    LOGGER.debug(
+        "Context for prompt: area=%s, floor=%s, device_name=%s",
+        area,
+        floor,
+        device_name,
+    )
+
     # Render prompt
-    return template.Template(
+    rendered_prompt = template.Template(
         agent_prompt,
         hass,
     ).async_render(
@@ -196,3 +206,5 @@ def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
         },
         parse_result=False,
     )
+    LOGGER.debug("Final rendered manual prompt: %s", rendered_prompt)
+    return rendered_prompt

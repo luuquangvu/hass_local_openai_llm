@@ -153,12 +153,6 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
     return "".join(output_parts), ""
 
 
-def _strip_text_formatting(text: str) -> str:
-    """Remove Markdown bold markers."""
-    cleaned, _ = _consume_emphasis(text, flush=True)
-    return cleaned
-
-
 def _is_gemini_model(model: str | None) -> bool:
     """Return True if the model is identified as a Gemini model."""
     if not model:
@@ -365,6 +359,11 @@ async def _convert_content_to_chat_message(
                 )
 
                 if not _attachment_supported(raw_mime_type, model):
+                    LOGGER.debug(
+                        "Unsupported attachment type '%s' for model '%s'",
+                        raw_mime_type,
+                        model,
+                    )
                     raise HomeAssistantError(
                         translation_domain=DOMAIN,
                         translation_key="unsupported_attachment_type",
@@ -450,6 +449,7 @@ def _decode_tool_arguments(arguments: str) -> Any:
     try:
         return json.loads(arguments)
     except json.JSONDecodeError as err:
+        LOGGER.error("Unexpected tool argument response: %s", err)
         raise HomeAssistantError(f"Unexpected tool argument response: {err}") from err
 
 
@@ -511,6 +511,7 @@ async def _transform_stream(
         content_segments: list[str] = []
 
         if (content := delta.content) is not None:
+            LOGGER.debug("Raw content from API stream: %s", content)
             if strip_emojis:
                 content = await loop.run_in_executor(None, demoji.replace, content, "")
             if strip_emphasis and content:
@@ -523,6 +524,7 @@ async def _transform_stream(
             else:
                 content = ""
 
+            LOGGER.debug("Content after filtering stream chunk: %s", content)
             if content:
                 content_segments.append(content)
 
@@ -651,6 +653,7 @@ class LocalAiEntity(Entity):
         client = self.entry.runtime_data
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
+            LOGGER.debug("Sending chat request to API with payload: %s", model_args)
             try:
                 result_stream = await client.chat.completions.create(
                     **model_args, stream=True
@@ -712,12 +715,14 @@ class LocalAiEntity(Entity):
 
         client = self.entry.runtime_data
 
+        LOGGER.debug("Sending image generation request to API: %s", model_args)
         try:
             response = await client.responses.create(**model_args)
         except openai.OpenAIError as err:
             LOGGER.error("Error requesting image response from API: %s", err)
             raise HomeAssistantError("Error talking to API") from err
 
+        LOGGER.debug("Received image response from API: %s", response)
         text_output = getattr(response, "output_text", None)
 
         if (not text_output) and getattr(response, "output", None):
@@ -732,12 +737,15 @@ class LocalAiEntity(Entity):
             if text_parts:
                 text_output = "".join(text_parts)
 
+        LOGGER.debug("Extracted text_output before filtering: %s", text_output)
         if text_output:
             text_output = text_output.strip()
         if strip_emojis and text_output:
             text_output = demoji.replace(text_output, "")
         if strip_emphasis and text_output:
-            text_output = _strip_text_formatting(text_output)
+            text_output, _ = _consume_emphasis(text_output, flush=True)
+
+        LOGGER.debug("Final text_output after filtering: %s", text_output)
         if text_output == "":
             text_output = None
 

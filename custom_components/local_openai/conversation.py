@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers import llm
 
 from . import LocalAiConfigEntry
-from .const import DOMAIN
+from .const import DOMAIN, LOGGER
 from .entity import LocalAiEntity
 
 
@@ -54,6 +54,8 @@ class LocalAiConversationEntity(LocalAiEntity, conversation.ConversationEntity):
         chat_log: conversation.ChatLog,
     ) -> conversation.ConversationResult:
         """Process the user input and call the API."""
+        LOGGER.debug("Received user input: %s", user_input)
+        LOGGER.debug("Initial chat log: %s", chat_log)
         options = self.subentry.data
         system_prompt = options.get(CONF_PROMPT)
 
@@ -62,6 +64,8 @@ class LocalAiConversationEntity(LocalAiEntity, conversation.ConversationEntity):
         # Filter out any tool providers that no longer exist
         llm_apis = options.get(CONF_LLM_HASS_API)
         llm_apis = [api for api in llm_apis if api in hass_apis]
+        LOGGER.debug("System prompt: %s", system_prompt)
+        LOGGER.debug("LLM APIs available: %s", llm_apis)
 
         try:
             await chat_log.async_provide_llm_data(
@@ -71,8 +75,11 @@ class LocalAiConversationEntity(LocalAiEntity, conversation.ConversationEntity):
                 user_input.extra_system_prompt,
             )
         except conversation.ConverseError as err:
+            LOGGER.error("Error during conversation setup: %s", err)
             return err.as_conversation_result()
 
         await self._async_handle_chat_log(chat_log, user_input=user_input)
 
-        return conversation.async_get_result_from_chat_log(user_input, chat_log)
+        result = conversation.async_get_result_from_chat_log(user_input, chat_log)
+        LOGGER.debug("Final conversation result: %s", result)
+        return result

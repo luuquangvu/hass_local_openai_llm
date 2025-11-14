@@ -5,7 +5,6 @@ from __future__ import annotations
 from json import JSONDecodeError
 import base64
 import binascii
-import logging
 
 from openai.types.responses.response_output_item import ImageGenerationCall
 
@@ -16,10 +15,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.json import json_loads
 
 from . import LocalAiConfigEntry
-from .const import GEMINI_MODELS
+from .const import GEMINI_MODELS, LOGGER
 from .entity import LocalAiEntity
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -74,6 +71,7 @@ class LocalAITaskEntity(
             )
 
         text = chat_log.content[-1].content or ""
+        LOGGER.debug("Raw text content from LLM for GenDataTask: %s", text)
 
         if not task.structure:
             return ai_task.GenDataTaskResult(
@@ -82,7 +80,9 @@ class LocalAITaskEntity(
             )
         try:
             data = json_loads(text)
+            LOGGER.debug("Structured data from LLM for GenDataTask: %s", data)
         except JSONDecodeError as err:
+            LOGGER.error("Failed to parse structured response from LLM: %s", err)
             raise HomeAssistantError("Error with structured response") from err
 
         return ai_task.GenDataTaskResult(
@@ -110,6 +110,7 @@ class LocalAITaskEntity(
             native = getattr(content, "native", None)
             if isinstance(native, ImageGenerationCall) and native.result:
                 image_call = native
+                LOGGER.debug("ImageGenerationCall object: %s", image_call)
                 break
 
         if image_call is None or image_call.result is None:
@@ -118,6 +119,7 @@ class LocalAITaskEntity(
         try:
             image_data = base64.b64decode(image_call.result)
         except (binascii.Error, ValueError) as err:
+            LOGGER.error("Failed to decode base64 image data: %s", err)
             raise HomeAssistantError("Invalid image response data") from err
 
         image_call.result = None
@@ -137,6 +139,13 @@ class LocalAITaskEntity(
                 width = height = None
 
         revised_prompt = getattr(image_call, "revised_prompt", None)
+        LOGGER.debug(
+            "Generated image details: mime_type=%s, width=%s, height=%s, revised_prompt=%s",
+            mime_type,
+            width,
+            height,
+            revised_prompt,
+        )
 
         return ai_task.GenImageTaskResult(
             image_data=image_data,
