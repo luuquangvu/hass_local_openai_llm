@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator, Callable
 import json
 import base64
 import mimetypes
-import re
 import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -108,34 +107,6 @@ def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
     return False
 
 
-def _process_latex_block_content(
-    buffer: str, start: int, marker: str, flush: bool
-) -> tuple[str, int] | tuple[None, None]:
-    """Processes a LaTeX block, returns content and new index."""
-    end = buffer.find(marker, start + len(marker))
-    if end == -1:
-        if not flush:
-            return None, None  # unclosed
-
-        # If flushing, process the rest of the buffer
-        content = buffer[start + len(marker) :]
-        new_idx = len(buffer)
-    else:
-        content = buffer[start + len(marker) : end]
-        new_idx = end + len(marker)
-
-    # Apply LaTeX-specific rules
-    content = re.sub(r"\\text\{(.*?)}", r"\1", content)
-    content = content.replace(r"^\circ", "°")
-    content = content.replace(r"\%", "%")
-    content = content.replace(r"\$", "$")
-
-    # Recursively process the simplified content for other markers (e.g., **)
-    processed_content, _ = _consume_emphasis(content, flush)
-
-    return processed_content, new_idx
-
-
 def _process_emphasis_block_content(
     buffer: str, start: int, flush: bool
 ) -> tuple[str, int] | tuple[None, None]:
@@ -152,57 +123,38 @@ def _process_emphasis_block_content(
     next_index = end + 2
     next_char = buffer[next_index] if next_index < length else ""
     if _should_strip_emphasis(inner, prev_char, next_char):
-        # Recursively process the inner content
-        processed_inner, _ = _consume_emphasis(inner, flush)
+        processed_inner = inner
         return processed_inner, end + 2
     else:
         return buffer[start : end + 2], end + 2
 
 
 def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
-    """Strip emphasis markers and simplify LaTeX blocks from the buffer and return remaining text."""
+    """Strip emphasis markers from the buffer and return remaining text."""
     output_parts: list[str] = []
     idx = 0
     length = len(buffer)
 
     while idx < length:
         next_emphasis = buffer.find("**", idx)
-        next_latex_double = buffer.find("$$", idx)
-        next_latex_single = buffer.find("$", idx)
 
-        positions = [
-            p for p in [next_emphasis, next_latex_double, next_latex_single] if p != -1
-        ]
-        if not positions:
+        if next_emphasis == -1:
             output_parts.append(buffer[idx:])
             break
 
-        min_pos = min(positions)
+        output_parts.append(buffer[idx:next_emphasis])
 
-        output_parts.append(buffer[idx:min_pos])
-
-        if min_pos == next_latex_double or min_pos == next_latex_single:
-            marker = "$$" if min_pos == next_latex_double else "$"
-            content, new_idx = _process_latex_block_content(
-                buffer, min_pos, marker, flush
-            )
-            if content is None:
-                return "".join(output_parts), buffer[min_pos:]
-            output_parts.append(content)
-            idx = new_idx
-
-        elif min_pos == next_emphasis:
-            content, new_idx = _process_emphasis_block_content(buffer, min_pos, flush)
-            if content is None:
-                return "".join(output_parts), buffer[min_pos:]
-            output_parts.append(content)
-            idx = new_idx
+        content, new_idx = _process_emphasis_block_content(buffer, next_emphasis, flush)
+        if content is None:
+            return "".join(output_parts), buffer[next_emphasis:]
+        output_parts.append(content)
+        idx = new_idx
 
     return "".join(output_parts), ""
 
 
 def _strip_text_formatting(text: str) -> str:
-    """Remove Markdown bold markers and simplify LaTeX blocks."""
+    """Remove Markdown bold markers."""
     cleaned, _ = _consume_emphasis(text, flush=True)
     return cleaned
 
