@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, Callable
 import json
 import base64
 import mimetypes
+import re
 import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -108,36 +109,74 @@ def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
 
 
 def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
-    """Strip emphasis markers from the buffer and return remaining text."""
+    """Strip emphasis markers and simplify LaTeX blocks from the buffer and return remaining text."""
     output_parts: list[str] = []
     idx = 0
     length = len(buffer)
 
     while idx < length:
-        start = buffer.find("**", idx)
-        if start == -1:
+        next_emphasis = buffer.find("**", idx)
+        next_latex_double = buffer.find("$$", idx)
+        next_latex_single = buffer.find("$", idx)
+
+        positions = [
+            p for p in [next_emphasis, next_latex_double, next_latex_single] if p != -1
+        ]
+        if not positions:
             output_parts.append(buffer[idx:])
-            return "".join(output_parts), ""
+            break
 
-        output_parts.append(buffer[idx:start])
-        end = buffer.find("**", start + 2)
+        min_pos = min(positions)
 
-        if end == -1:
-            if flush:
-                output_parts.append(buffer[start:])
-                return "".join(output_parts), ""
-            return "".join(output_parts), buffer[start:]
+        output_parts.append(buffer[idx:min_pos])
 
-        inner = buffer[start + 2 : end]
-        prev_char = buffer[start - 1] if start > 0 else ""
-        next_index = end + 2
-        next_char = buffer[next_index] if next_index < length else ""
-        if _should_strip_emphasis(inner, prev_char, next_char):
-            output_parts.append(inner)
-        else:
-            output_parts.append(buffer[start : end + 2])
+        if min_pos == next_latex_double or min_pos == next_latex_single:
+            # It's a LaTeX block
+            marker = "$$" if min_pos == next_latex_double else "$"
+            start = min_pos
+            end = buffer.find(marker, start + len(marker))
 
-        idx = end + 2
+            if end == -1:
+                if flush:
+                    # For unclosed blocks when flushing, let's just process the content we have
+                    content = buffer[start + len(marker) :]
+                    content = content.replace("\^\\circ", "°").replace("\\%", "%")
+                    content = re.sub("\\text\{(.*?)}", r"\1", content)
+                    output_parts.append(content)
+                    return "".join(output_parts), ""
+                else:
+                    return "".join(output_parts), buffer[start:]
+
+            # We have a LaTeX block. Let's process its content.
+            content = buffer[start + len(marker) : end]
+
+            # Simple LaTeX to text conversion
+            content = content.replace("\^\\circ", "°")
+            content = content.replace("\\%", "%")
+            content = re.sub("\\text\{(.*?)}", r"\1", content)
+
+            output_parts.append(content)
+            idx = end + len(marker)
+
+        elif min_pos == next_emphasis:
+            # It's a ** block, strip emphasis
+            start = next_emphasis
+            end = buffer.find("**", start + 2)
+            if end == -1:
+                if flush:
+                    output_parts.append(buffer[start:])
+                    return "".join(output_parts), ""
+                return "".join(output_parts), buffer[start:]
+
+            inner = buffer[start + 2 : end]
+            prev_char = buffer[start - 1] if start > 0 else ""
+            next_index = end + 2
+            next_char = buffer[next_index] if next_index < length else ""
+            if _should_strip_emphasis(inner, prev_char, next_char):
+                output_parts.append(inner)
+            else:
+                output_parts.append(buffer[start : end + 2])
+            idx = end + 2
 
     return "".join(output_parts), ""
 
@@ -224,7 +263,7 @@ def _format_tool(
         parameters=convert(tool.parameters, custom_serializer=custom_serializer),
     )
     tool_spec["description"] = (
-        tool.description if tool.description.strip() else "A callable function"
+        tool.description.strip() if tool.description else "A callable function"
     )
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
 
@@ -388,19 +427,24 @@ async def _convert_content_to_chat_message(
                 content_parts.append(
                     cast(
                         ChatCompletionContentPartParam,
-                        {
-                            "type": "file",
-                            "file": {
-                                "file_data": base64_file,
-                                "filename": attachment.path.name,
+                        cast(
+                            object,
+                            {
+                                "type": "file",
+                                "file": {
+                                    "file_data": base64_file,
+                                    "filename": attachment.path.name,
+                                },
                             },
-                        },
+                        ),
                     )
                 )
 
         if content.content:
             content_parts.append(
-                ChatCompletionContentPartTextParam(type="text", text=content.content)
+                ChatCompletionContentPartTextParam(
+                    type="text", text=str(content.content)
+                )
             )
 
         if content_parts:
@@ -462,7 +506,7 @@ async def _transform_stream(
         delta = choice.delta
 
         if new_msg:
-            chunk["role"] = delta.role
+            chunk["role"] = cast(Literal["assistant"], delta.role)
             new_msg = False
             pending_emphasis = ""
 
@@ -574,13 +618,6 @@ class LocalAiEntity(Entity):
         temperature = options.get(CONF_TEMPERATURE, 1)
         parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
 
-        model_args = {
-            "model": self.model,
-            "user": chat_log.conversation_id,
-            "temperature": temperature,
-            "parallel_tool_calls": parallel_tool_calls,
-        }
-
         tools: list[ChatCompletionFunctionToolParam] | None = None
         if chat_log.llm_api:
             tools = [
@@ -626,6 +663,7 @@ class LocalAiEntity(Entity):
 
         if tools:
             model_args["tools"] = tools
+            model_args["parallel_tool_calls"] = parallel_tool_calls
 
         if structure:
             if TYPE_CHECKING:
