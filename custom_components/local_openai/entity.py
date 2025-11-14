@@ -114,19 +114,26 @@ def _process_latex_block_content(
     """Processes a LaTeX block, returns content and new index."""
     end = buffer.find(marker, start + len(marker))
     if end == -1:
-        if flush:
-            content = buffer[start + len(marker) :]
-            content = content.replace(r"^\circ", "°")
-            content = content.replace(r"\%", "%")
-            content = re.sub(r"\\text\{(.*?)}", r"\1", content)
-            return content, len(buffer)
-        return None, None  # unclosed
+        if not flush:
+            return None, None  # unclosed
 
-    content = buffer[start + len(marker) : end]
+        # If flushing, process the rest of the buffer
+        content = buffer[start + len(marker) :]
+        new_idx = len(buffer)
+    else:
+        content = buffer[start + len(marker) : end]
+        new_idx = end + len(marker)
+
+    # Apply LaTeX-specific rules
+    content = re.sub(r"\\text\{(.*?)}", r"\1", content)
     content = content.replace(r"^\circ", "°")
     content = content.replace(r"\%", "%")
-    content = re.sub(r"\\text\{(.*?)}", r"\1", content)
-    return content, end + len(marker)
+    content = content.replace(r"\$", "$")
+
+    # Recursively process the simplified content for other markers (e.g., **)
+    processed_content, _ = _consume_emphasis(content, flush)
+
+    return processed_content, new_idx
 
 
 def _process_emphasis_block_content(
@@ -145,7 +152,9 @@ def _process_emphasis_block_content(
     next_index = end + 2
     next_char = buffer[next_index] if next_index < length else ""
     if _should_strip_emphasis(inner, prev_char, next_char):
-        return inner, end + 2
+        # Recursively process the inner content
+        processed_inner, _ = _consume_emphasis(inner, flush)
+        return processed_inner, end + 2
     else:
         return buffer[start : end + 2], end + 2
 
@@ -629,6 +638,13 @@ class LocalAiEntity(Entity):
         temperature = options.get(CONF_TEMPERATURE, 1)
         parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
 
+        model_args: dict[str, Any] = {
+            "model": self.model,
+            "user": chat_log.conversation_id,
+            "temperature": temperature,
+            "parallel_tool_calls": parallel_tool_calls,
+        }
+
         tools: list[ChatCompletionFunctionToolParam] | None = None
         if chat_log.llm_api:
             tools = [
@@ -665,13 +681,7 @@ class LocalAiEntity(Entity):
             )
             return
 
-        model_args = {
-            "model": self.model,
-            "user": chat_log.conversation_id,
-            "temperature": temperature,
-            "parallel_tool_calls": parallel_tool_calls,
-            "messages": messages,
-        }
+        model_args["messages"] = messages
 
         if tools:
             model_args["tools"] = tools
