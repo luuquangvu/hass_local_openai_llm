@@ -140,8 +140,9 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
                 if flush:
                     # For unclosed blocks when flushing, let's just process the content we have
                     content = buffer[start + len(marker) :]
-                    content = content.replace("\^\\circ", "°").replace("\\%", "%")
-                    content = re.sub("\\text\{(.*?)}", r"\1", content)
+                    content = content.replace(r"^\circ", "°")
+                    content = content.replace(r"\%", "%")
+                    content = re.sub(r"\\text\{(.*?)}", r"\1", content)
                     output_parts.append(content)
                     return "".join(output_parts), ""
                 else:
@@ -151,9 +152,9 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
             content = buffer[start + len(marker) : end]
 
             # Simple LaTeX to text conversion
-            content = content.replace("\^\\circ", "°")
-            content = content.replace("\\%", "%")
-            content = re.sub("\\text\{(.*?)}", r"\1", content)
+            content = content.replace(r"^\circ", "°")
+            content = content.replace(r"\%", "%")
+            content = re.sub(r"\\text\{(.*?)}", r"\1", content)
 
             output_parts.append(content)
             idx = end + len(marker)
