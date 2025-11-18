@@ -2,52 +2,49 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable
-import json
+import asyncio
 import base64
+import json
+from collections.abc import AsyncGenerator, Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 import demoji
-import asyncio
 import openai
+import voluptuous as vol
+from homeassistant.components import conversation
+from homeassistant.config_entries import ConfigSubentry
+from homeassistant.const import CONF_MODEL, CONF_PROMPT
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import llm
+from homeassistant.helpers.entity import Entity
 from openai._streaming import AsyncStream
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
+    ChatCompletionChunk,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartTextParam,
     ChatCompletionFunctionToolParam,
-    ChatCompletionMessage,
     ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
-    ChatCompletionChunk,
-    ChatCompletionContentPartParam,
-    ChatCompletionContentPartTextParam,
-    ChatCompletionContentPartImageParam,
 )
-
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
-import voluptuous as vol
 from voluptuous_openapi import convert
-
-from homeassistant.components import conversation
-from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import CONF_MODEL, CONF_PROMPT
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr, llm
-from homeassistant.helpers.entity import Entity
 
 from . import LocalAiConfigEntry
 from .const import (
-    DOMAIN,
-    LOGGER,
-    CONF_STRIP_EMOJIS,
     CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
+    CONF_PARALLEL_TOOL_CALLS,
+    CONF_STRIP_EMOJIS,
     CONF_TEMPERATURE,
-    CONF_PARALLEL_TOOL_CALLS
+    DOMAIN,
+    LOGGER,
 )
 from .prompt import format_custom_prompt
 
@@ -82,7 +79,6 @@ def _format_structured_output(
     name: str, schema: vol.Schema, llm_api: llm.APIInstance | None
 ) -> JSONSchema:
     """Format the schema to be compatible with OpenRouter API."""
-
     result: JSONSchema = {
         "name": name,
         "strict": True,
@@ -109,11 +105,14 @@ def _format_tool(
         name=tool.name,
         parameters=convert(tool.parameters, custom_serializer=custom_serializer),
     )
-    tool_spec["description"] = tool.description if tool.description.strip() else "A callable function"
+    tool_spec["description"] = (
+        tool.description if tool.description.strip() else "A callable function"
+    )
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
 
 
 def b64_file(file_path):
+    """Retrieve the base64 encoded file contents."""
     return base64.b64encode(file_path.read_bytes()).decode("utf-8")
 
 
@@ -143,7 +142,9 @@ async def _convert_content_to_chat_message(
                         translation_domain=DOMAIN,
                         translation_key="unsupported_attachment_type",
                     )
-                base64_file = await loop.run_in_executor(None, b64_file, attachment.path)
+                base64_file = await loop.run_in_executor(
+                    None, b64_file, attachment.path
+                )
                 messages.append(
                     ChatCompletionContentPartImageParam(
                         type="image_url",
@@ -154,7 +155,9 @@ async def _convert_content_to_chat_message(
                     )
                 )
 
-        messages.append(ChatCompletionContentPartTextParam(type="text", text=content.content))
+        messages.append(
+            ChatCompletionContentPartTextParam(type="text", text=content.content)
+        )
         return ChatCompletionUserMessageParam(
             role="user",
             content=messages,
@@ -195,7 +198,6 @@ async def _transform_stream(
     strip_emojis: bool,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a streaming OpenAI response to ChatLog format."""
-
     new_msg = True
     pending_think = ""
     in_think = False
@@ -220,20 +222,27 @@ async def _transform_stream(
             chunk["tool_calls"] = [
                 llm.ToolInput(
                     tool_name=tool_call["name"],
-                    tool_args=json.loads(tool_call["args"]) if tool_call["args"] else {},
-                ) for tool_call in pending_tool_calls
+                    tool_args=json.loads(tool_call["args"])
+                    if tool_call["args"]
+                    else {},
+                )
+                for tool_call in pending_tool_calls
             ]
             pending_tool_calls = []
 
         if (tool_calls := delta.tool_calls) is not None and tool_calls:
             tool_call = tool_calls[0]
             if len(pending_tool_calls) < tool_call.index + 1:
-                pending_tool_calls.append({
-                    "name": tool_call.function.name,
-                    "args": tool_call.function.arguments or ""
-                })
+                pending_tool_calls.append(
+                    {
+                        "name": tool_call.function.name,
+                        "args": tool_call.function.arguments or "",
+                    }
+                )
             else:
-                pending_tool_calls[tool_call.index]["args"] += tool_call.function.arguments
+                pending_tool_calls[tool_call.index]["args"] += (
+                    tool_call.function.arguments
+                )
 
         if (content := delta.content) is not None:
             if strip_emojis:
@@ -257,8 +266,9 @@ async def _transform_stream(
             if seen_visible:
                 chunk["content"] = content
 
-        if seen_visible or chunk.get('tool_calls') or chunk.get('role'):
+        if seen_visible or chunk.get("tool_calls") or chunk.get("role"):
             yield chunk
+
 
 class LocalAiEntity(Entity):
     """Base entity for Open Router."""
@@ -308,17 +318,24 @@ class LocalAiEntity(Entity):
         if tools:
             model_args["tools"] = tools
 
-        messages = self._trim_history([
-            m
-            for content in chat_log.content
-            if (m := await _convert_content_to_chat_message(content))
-        ], max_message_history)
+        messages = self._trim_history(
+            [
+                m
+                for content in chat_log.content
+                if (m := await _convert_content_to_chat_message(content))
+            ],
+            max_message_history,
+        )
 
         # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
         # Additional variables for tools and devices are exposed to the jinja prompt
         if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-            prompt = format_custom_prompt(self.hass, options.get(CONF_PROMPT), user_input, tools)
-            messages[0] = ChatCompletionSystemMessageParam(role="system", content=prompt)
+            prompt = format_custom_prompt(
+                self.hass, options.get(CONF_PROMPT), user_input, tools
+            )
+            messages[0] = ChatCompletionSystemMessageParam(
+                role="system", content=prompt
+            )
 
         model_args["messages"] = messages
 
@@ -336,7 +353,9 @@ class LocalAiEntity(Entity):
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
             try:
-                result_stream = await client.chat.completions.create(**model_args, stream=True)
+                result_stream = await client.chat.completions.create(
+                    **model_args, stream=True
+                )
             except openai.OpenAIError as err:
                 LOGGER.error("Error requesting response from API: %s", err)
                 raise HomeAssistantError("Error talking to API") from err
@@ -347,7 +366,7 @@ class LocalAiEntity(Entity):
                         msg
                         async for content in chat_log.async_add_delta_content_stream(
                             self.entity_id,
-                            _transform_stream(result_stream, strip_emojis)
+                            _transform_stream(stream=result_stream, strip_emojis=strip_emojis),
                         )
                         if (msg := await _convert_content_to_chat_message(content))
                     ]
@@ -358,10 +377,10 @@ class LocalAiEntity(Entity):
             if not chat_log.unresponded_tool_results:
                 break
 
-
     @staticmethod
     def _trim_history(messages: list, max_messages: int) -> list:
-        """Trims excess messages from a single history.
+        """
+        Trims excess messages from a single history.
 
         This sets the max history to allow a configurable size history may take
         up in the context window.
@@ -382,7 +401,7 @@ class LocalAiEntity(Entity):
             drop_index = len(messages) - num_keep
             messages = [
                 messages[0],
-                *messages[int(drop_index):],
+                *messages[int(drop_index) :],
             ]
 
         return messages

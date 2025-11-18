@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from json import JSONDecodeError
 import logging
+from json import JSONDecodeError
 
 from homeassistant.components import ai_task, conversation
 from homeassistant.core import HomeAssistant
@@ -68,9 +68,7 @@ class LocalAITaskEntity(
         try:
             data = json_loads(text)
         except JSONDecodeError as err:
-            raise HomeAssistantError(
-                "Error with structured response"
-            ) from err
+            raise HomeAssistantError("Error with structured response") from err
 
         return ai_task.GenDataTaskResult(
             conversation_id=chat_log.conversation_id,

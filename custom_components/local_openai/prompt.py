@@ -1,10 +1,22 @@
-from homeassistant.components.homeassistant.exposed_entities import async_should_expose
-from homeassistant.components.conversation.const import DOMAIN as CONVERSATION_DOMAIN
-from homeassistant.helpers import template, entity_registry as er, area_registry as ar, \
-    device_registry as dr, floor_registry as fr
-from webcolors import CSS3
 import webcolors
-
+from homeassistant.components.conversation.const import DOMAIN as CONVERSATION_DOMAIN
+from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+from homeassistant.helpers import (
+    area_registry as ar,
+)
+from homeassistant.helpers import (
+    device_registry as dr,
+)
+from homeassistant.helpers import (
+    entity_registry as er,
+)
+from homeassistant.helpers import (
+    floor_registry as fr,
+)
+from homeassistant.helpers import (
+    template,
+)
+from webcolors import CSS3
 
 DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE = [
     "rgb_color",
@@ -16,19 +28,18 @@ DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE = [
     "media_title",
     "volume_level",
     "item",
-    "wind_speed"
+    "wind_speed",
 ]
 
 
 CSS3_NAME_TO_RGB = {
-    name: webcolors.name_to_rgb(name, CSS3)
-    for name
-    in webcolors.names(CSS3)
+    name: webcolors.name_to_rgb(name, CSS3) for name in webcolors.names(CSS3)
 }
+
 
 def closest_color(requested_color):
     """
-    Lovingly borrowed from https://github.com/acon96/home-llm
+    Lovingly borrowed from https://github.com/acon96/home-llm.
     """
     min_colors = {}
 
@@ -43,7 +54,7 @@ def closest_color(requested_color):
 
 def async_get_entities(hass) -> list:
     """
-    Lovingly borrowed from https://github.com/acon96/home-llm (_generate_system_prompt)
+    Lovingly borrowed from https://github.com/acon96/home-llm (_generate_system_prompt).
     """
     extra_attributes_to_expose = DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE
 
@@ -62,9 +73,9 @@ def async_get_entities(hass) -> list:
                 elif attribute_name == "temperature":
                     # try to get unit or guess otherwise
                     suffix = "F" if value > 50 else "C"
-                    value = F"{int(value)} {suffix}"
+                    value = f"{int(value)} {suffix}"
                 elif attribute_name == "rgb_color":
-                    value = F"{closest_color(value)} {value}"
+                    value = f"{closest_color(value)} {value}"
                 elif attribute_name == "volume_level":
                     value = f"vol={int(value * 100)}"
                 elif attribute_name == "brightness":
@@ -85,15 +96,18 @@ def async_get_entities(hass) -> list:
         exposed_attributes = expose_attributes(attributes)
         str_attributes = ";".join([state] + exposed_attributes)
 
-        formatted_devices = formatted_devices + f"{name} '{attributes.get('friendly_name')}' = {str_attributes}\n"
+        formatted_devices = (
+            formatted_devices
+            + f"{name} '{attributes.get('friendly_name')}' = {str_attributes}\n"
+        )
         device_attribs = {
             "entity_id": name,
-            "name": attributes.get('friendly_name'),
+            "name": attributes.get("friendly_name"),
             "state": state,
             "attributes": exposed_attributes,
             "area_name": attributes.get("area_name"),
             "area_id": attributes.get("area_id"),
-            "is_alias": False
+            "is_alias": False,
         }
 
         if "aliases" in attributes:
@@ -106,9 +120,9 @@ def async_get_entities(hass) -> list:
 
 def async_get_exposed_entities(hass) -> tuple[dict[str, str], list[str]]:
     """
-    Gather exposed entity states
+    Gather exposed entity states.
 
-    Lovingly borrowed from https://github.com/acon96/home-llm
+    Lovingly borrowed from https://github.com/acon96/home-llm.
     """
     entity_states = {}
     domains = set()
@@ -133,7 +147,9 @@ def async_get_exposed_entities(hass) -> tuple[dict[str, str], list[str]]:
                 attributes["aliases"] = entity.aliases
 
             if entity.unit_of_measurement:
-                attributes["state"] = attributes["state"] + " " + entity.unit_of_measurement
+                attributes["state"] = (
+                    attributes["state"] + " " + entity.unit_of_measurement
+                )
 
         # area could be on device or entity. prefer device area
         area_id = None

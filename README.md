@@ -4,6 +4,9 @@
 - llama.cpp
 - vLLM
 - LM Studio
+- Ollama
+- OpenRouter
+- Scaleway
 
 **This integration has been forked from Home Assistants OpenRouter integration, with the following changes:**
 - Added server URL to the initial server configuration
@@ -20,6 +23,7 @@
   - This will remove ALL content that Home Assistant normally inserts when compiling the system prompt that's sent to the LLM
   - Additional variables are exposed to the prompt jinja template for tools, entities, voice-satellite area, etc
   - **For advanced use only: not recommended for most users, and not yet documented here**
+- Added support for parallel tool calling 
 
 ---
 
@@ -66,7 +70,8 @@ After installation, configure the integration through Home Assistant's UI:
 - Assist requires a fairly lengthy context for tooling and entity definitions. 
   - It is strongly recommended to use _at least_ 8k context size and to limit history length to avoid context overflow issues.
   - This is not configurable through OpenAI-compatible APIs, and needs to be configured with the inference server directly.
-  
+- Parallel tool calling requires support from both your model and inference server.
+  - In some cases, control of this is handled by the server directly, in which case toggling this will not have any result.  
 
 ## Additional
 

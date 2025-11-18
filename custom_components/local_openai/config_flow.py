@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import re
 import logging
+import re
 from typing import Any
-from openai import AsyncOpenAI, OpenAIError
 
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -21,25 +19,26 @@ from homeassistant.core import callback
 from homeassistant.helpers import llm
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     TemplateSelector,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
 )
+from openai import AsyncOpenAI, OpenAIError
 
 from .const import (
-    DOMAIN,
-    RECOMMENDED_CONVERSATION_OPTIONS,
     CONF_BASE_URL,
-    CONF_STRIP_EMOJIS,
     CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
-    CONF_TEMPERATURE,
-    CONF_SERVER_NAME,
     CONF_PARALLEL_TOOL_CALLS,
+    CONF_SERVER_NAME,
+    CONF_STRIP_EMOJIS,
+    CONF_TEMPERATURE,
+    DOMAIN,
+    RECOMMENDED_CONVERSATION_OPTIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,7 +67,9 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             self._async_abort_entries_match(user_input)
-            _LOGGER.debug(f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}")
+            _LOGGER.debug(
+                f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}"
+            )
 
             try:
                 client = AsyncOpenAI(
@@ -88,7 +89,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 _LOGGER.debug("Server connection verified")
                 return self.async_create_entry(
-                    title=f"{user_input.get(CONF_SERVER_NAME, "Local LLM Server")}",
+                    title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
                     data=user_input,
                 )
 
@@ -107,9 +108,10 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
 
 class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
     """Handle subentry flow for Local OpenAI LLM."""
+
     @staticmethod
     def strip_model_pathing(model_name: str) -> str:
-        """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension"""
+        """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension."""
         matches = re.search(r"([^\/]*)\.gguf$", model_name.strip())
         return matches[1] if matches else model_name
 
@@ -117,7 +119,7 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
 class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
-    def get_has_apis(self) -> list[SelectOptionDict]:
+    def get_llm_apis(self) -> list[SelectOptionDict]:
         return [
             SelectOptionDict(
                 label=api.name,
@@ -127,7 +129,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         ]
 
     async def get_schema(self, options: dict = {}):
-        hass_apis = self.get_has_apis()
+        llm_apis = self.get_llm_apis()
         client = self._get_entry().runtime_data
 
         try:
@@ -156,13 +158,18 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 ),
                 vol.Optional(
                     CONF_PROMPT,
-                    default=options.get(CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]),
+                    default=options.get(
+                        CONF_PROMPT, RECOMMENDED_CONVERSATION_OPTIONS[CONF_PROMPT]
+                    ),
                 ): TemplateSelector(),
                 vol.Optional(
                     CONF_LLM_HASS_API,
-                    default=options.get(CONF_LLM_HASS_API, RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API]),
+                    default=options.get(
+                        CONF_LLM_HASS_API,
+                        RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
+                    ),
                 ): SelectSelector(
-                    SelectSelectorConfig(options=hass_apis, multiple=True)
+                    SelectSelectorConfig(options=llm_apis, multiple=True)
                 ),
                 vol.Optional(
                     CONF_PARALLEL_TOOL_CALLS,
@@ -194,12 +201,12 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                         step=1,
                         mode=NumberSelectorMode.BOX,
                     )
-                )
+                ),
             }
         )
 
     async def async_step_user(
-            self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
         """User flow to create a sensor subentry."""
         if user_input is not None:
@@ -231,8 +238,11 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         options = self._get_reconfigure_subentry().data.copy()
 
         # Filter out any tool providers that no longer exist
-        hass_apis = [api.get("value") for api in self.get_has_apis()]
-        options["llm_hass_api"] = [api for api in options.get("llm_hass_api", []) if api in hass_apis]
+        llm_apis = [api.id for api in llm.async_get_apis(self.hass)]
+
+        options[CONF_LLM_HASS_API] = [
+            api for api in options.get(CONF_LLM_HASS_API, []) if api in llm_apis
+        ]
 
         return self.async_show_form(
             step_id="reconfigure",
@@ -277,7 +287,9 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
                     vol.Required(
                         CONF_MODEL,
                     ): SelectSelector(
-                        SelectSelectorConfig(options=downloaded_models, custom_value=True)
+                        SelectSelectorConfig(
+                            options=downloaded_models, custom_value=True
+                        )
                     ),
                 }
             ),

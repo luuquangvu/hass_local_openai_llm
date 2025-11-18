@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from openai import AsyncOpenAI, AuthenticationError, OpenAIError
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.httpx_client import get_async_client
+from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 
-from .const import LOGGER, CONF_BASE_URL
+from .const import CONF_BASE_URL, LOGGER
 
 PLATFORMS = [Platform.AI_TASK, Platform.CONVERSATION]
 
