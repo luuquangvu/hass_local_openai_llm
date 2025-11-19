@@ -276,7 +276,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         options = self._get_reconfigure_subentry().data.copy()
 
         # Filter out any tool providers that no longer exist
-        hass_apis = [api.get("value") for api in self.get_has_apis()]
+        hass_apis = [api.get("value") for api in self.get_llm_apis()]
         options["llm_hass_api"] = [
             api for api in options.get("llm_hass_api", []) if api in hass_apis
         ]

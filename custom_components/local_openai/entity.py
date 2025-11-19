@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import mimetypes
 import unicodedata
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Literal, cast
 
 import demoji
 import openai
