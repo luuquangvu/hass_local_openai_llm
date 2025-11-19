@@ -1,17 +1,24 @@
-from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+import webcolors
 from homeassistant.components.conversation.const import DOMAIN as CONVERSATION_DOMAIN
+from homeassistant.components.homeassistant.exposed_entities import async_should_expose
 from homeassistant.helpers import (
-    template,
-    entity_registry as er,
     area_registry as ar,
+)
+from homeassistant.helpers import (
     device_registry as dr,
+)
+from homeassistant.helpers import (
+    entity_registry as er,
+)
+from homeassistant.helpers import (
     floor_registry as fr,
 )
+from homeassistant.helpers import (
+    template,
+)
 from webcolors import CSS3
-import webcolors
 
 from .const import LOGGER
-
 
 DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE = [
     "rgb_color",
@@ -34,7 +41,7 @@ CSS3_NAME_TO_RGB = {
 
 def closest_color(requested_color):
     """
-    Lovingly borrowed from https://github.com/acon96/home-llm
+    Lovingly borrowed from https://github.com/acon96/home-llm.
     """
     min_colors = {}
 
@@ -49,7 +56,7 @@ def closest_color(requested_color):
 
 def async_get_entities(hass) -> list:
     """
-    Lovingly borrowed from https://github.com/acon96/home-llm (_generate_system_prompt)
+    Lovingly borrowed from https://github.com/acon96/home-llm (_generate_system_prompt).
     """
     extra_attributes_to_expose = DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE
 
@@ -115,9 +122,9 @@ def async_get_entities(hass) -> list:
 
 def async_get_exposed_entities(hass) -> tuple[dict[str, str], list[str]]:
     """
-    Gather exposed entity states
+    Gather exposed entity states.
 
-    Lovingly borrowed from https://github.com/acon96/home-llm
+    Lovingly borrowed from https://github.com/acon96/home-llm.
     """
     entity_states = {}
     domains = set()

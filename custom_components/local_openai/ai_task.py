@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from json import JSONDecodeError
 import base64
 import binascii
-
-from openai.types.responses.response_output_item import ImageGenerationCall
+from json import JSONDecodeError
 
 from homeassistant.components import ai_task, conversation
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.json import json_loads
+from openai.types.responses.response_output_item import ImageGenerationCall
 
 from . import LocalAiConfigEntry
 from .const import GEMINI_MODELS, LOGGER

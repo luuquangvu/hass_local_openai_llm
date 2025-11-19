@@ -2,57 +2,54 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable
-import json
+import asyncio
 import base64
 import mimetypes
 import unicodedata
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import demoji
-import asyncio
 import openai
+import voluptuous as vol
+from homeassistant.components import conversation
+from homeassistant.config_entries import ConfigSubentry
+from homeassistant.const import CONF_MODEL, CONF_PROMPT
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import llm
+from homeassistant.helpers.entity import Entity
 from openai._streaming import AsyncStream
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
+    ChatCompletionChunk,
+    ChatCompletionContentPartImageParam,
+    ChatCompletionContentPartInputAudioParam,
+    ChatCompletionContentPartParam,
+    ChatCompletionContentPartTextParam,
     ChatCompletionFunctionToolParam,
     ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
-    ChatCompletionChunk,
-    ChatCompletionContentPartParam,
-    ChatCompletionContentPartTextParam,
-    ChatCompletionContentPartImageParam,
-    ChatCompletionContentPartInputAudioParam,
 )
-
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
 from openai.types.responses.response_output_item import ImageGenerationCall
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
-import voluptuous as vol
 from voluptuous_openapi import convert
-
-from homeassistant.components import conversation
-from homeassistant.config_entries import ConfigSubentry
-from homeassistant.const import CONF_MODEL, CONF_PROMPT
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr, llm
-from homeassistant.helpers.entity import Entity
 
 from . import LocalAiConfigEntry
 from .const import (
-    DOMAIN,
-    LOGGER,
-    CONF_STRIP_EMOJIS,
-    CONF_STRIP_EMPHASIS,
     CONF_MANUAL_PROMPTING,
     CONF_MAX_MESSAGE_HISTORY,
-    CONF_TEMPERATURE,
-    GEMINI_MODELS,
     CONF_PARALLEL_TOOL_CALLS,
+    CONF_STRIP_EMOJIS,
+    CONF_STRIP_EMPHASIS,
+    CONF_TEMPERATURE,
+    DOMAIN,
+    GEMINI_MODELS,
+    LOGGER,
 )
 from .prompt import format_custom_prompt
 
@@ -125,8 +122,7 @@ def _process_emphasis_block_content(
     if _should_strip_emphasis(inner, prev_char, next_char):
         processed_inner = inner
         return processed_inner, end + 2
-    else:
-        return buffer[start : end + 2], end + 2
+    return buffer[start : end + 2], end + 2
 
 
 def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
@@ -201,7 +197,6 @@ def _format_structured_output(
     name: str, schema: vol.Schema, llm_api: llm.APIInstance | None
 ) -> JSONSchema:
     """Format the schema to be compatible with OpenRouter API."""
-
     result: JSONSchema = {
         "name": name,
         "strict": True,
@@ -326,6 +321,7 @@ def _convert_completion_messages_to_response_input(
 
 
 def b64_file(file_path):
+    """Retrieve the base64 encoded file contents."""
     return base64.b64encode(file_path.read_bytes()).decode("utf-8")
 
 
@@ -397,9 +393,9 @@ async def _convert_content_to_chat_message(
 
                 content_parts.append(
                     cast(
-                        ChatCompletionContentPartParam,
+                        "ChatCompletionContentPartParam",
                         cast(
-                            object,
+                            "object",
                             {
                                 "type": "file",
                                 "file": {
@@ -459,7 +455,6 @@ async def _transform_stream(
     strip_emphasis: bool,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a streaming OpenAI response to ChatLog format."""
-
     new_msg = True
     pending_think = ""
     in_think = False
@@ -478,7 +473,7 @@ async def _transform_stream(
         delta = choice.delta
 
         if new_msg:
-            chunk["role"] = cast(Literal["assistant"], delta.role)
+            chunk["role"] = cast("Literal['assistant']", delta.role)
             new_msg = False
             pending_emphasis = ""
 
@@ -770,7 +765,8 @@ class LocalAiEntity(Entity):
 
     @staticmethod
     def _trim_history(messages: list, max_messages: int) -> list:
-        """Trims excess messages from a single history.
+        """
+        Trims excess messages from a single history.
 
         This sets the max history to allow a configurable size history may take
         up in the context window.

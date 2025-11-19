@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from openai import AsyncOpenAI, OpenAIError
 
 import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
@@ -26,27 +24,28 @@ from homeassistant.core import callback
 from homeassistant.helpers import llm
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     TemplateSelector,
-    NumberSelector,
-    NumberSelectorConfig,
-    NumberSelectorMode,
 )
+from openai import AsyncOpenAI, OpenAIError
 
 from .const import (
+    CONF_BASE_URL,
+    CONF_MANUAL_PROMPTING,
+    CONF_MAX_MESSAGE_HISTORY,
+    CONF_PARALLEL_TOOL_CALLS,
+    CONF_SERVER_NAME,
+    CONF_STRIP_EMOJIS,
+    CONF_STRIP_EMPHASIS,
+    CONF_TEMPERATURE,
     DOMAIN,
     LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
-    CONF_BASE_URL,
-    CONF_STRIP_EMOJIS,
-    CONF_STRIP_EMPHASIS,
-    CONF_MANUAL_PROMPTING,
-    CONF_MAX_MESSAGE_HISTORY,
-    CONF_TEMPERATURE,
-    CONF_SERVER_NAME,
-    CONF_PARALLEL_TOOL_CALLS,
 )
 
 
@@ -118,7 +117,7 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
 
     @staticmethod
     def strip_model_pathing(model_name: str) -> str:
-        """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension"""
+        """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension."""
         matches = re.search(r"([^\/]*)\.gguf$", model_name.strip())
         return matches[1] if matches else model_name
 
@@ -126,7 +125,7 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
 class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
-    def get_has_apis(self) -> list[SelectOptionDict]:
+    def get_llm_apis(self) -> list[SelectOptionDict]:
         return [
             SelectOptionDict(
                 label=api.name,
@@ -136,7 +135,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         ]
 
     async def get_schema(self, options: dict = {}):
-        hass_apis = self.get_has_apis()
+        llm_apis = self.get_llm_apis()
         client = self._get_entry().runtime_data
 
         try:
@@ -188,7 +187,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                         RECOMMENDED_CONVERSATION_OPTIONS[CONF_LLM_HASS_API],
                     ),
                 ): SelectSelector(
-                    SelectSelectorConfig(options=hass_apis, multiple=True)
+                    SelectSelectorConfig(options=llm_apis, multiple=True)
                 ),
                 vol.Optional(
                     CONF_PARALLEL_TOOL_CALLS,
