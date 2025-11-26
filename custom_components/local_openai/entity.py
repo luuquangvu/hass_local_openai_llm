@@ -225,7 +225,9 @@ def _format_tool(
         parameters=convert(tool.parameters, custom_serializer=custom_serializer),
     )
     tool_spec["description"] = (
-        tool.description.strip() if tool.description else "A callable function"
+        tool.description.strip()
+        if (tool.description and tool.description.strip())
+        else "A callable function"
     )
     return ChatCompletionFunctionToolParam(type="function", function=tool_spec)
 
