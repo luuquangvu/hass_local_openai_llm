@@ -21,6 +21,7 @@ CONF_PARALLEL_TOOL_CALLS = "parallel_tool_calls"
 GEMINI_MODELS = (
     "gemini-2.5-flash",
     "gemini-2.5-pro",
+    "gemini-3.0-pro",
 )
 
 RECOMMENDED_CONVERSATION_OPTIONS = {
