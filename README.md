@@ -81,3 +81,7 @@ Looking to add some more functionality to your Home Assistant conversation agent
 
 - This integration is forked from the [OpenRouter](https://github.com/home-assistant/core/tree/dev/homeassistant/components/open_router) integration for Home Assistant by [@joostlek](https://github.com/joostlek)
 - This integration uses code from the [Local LLMs](https://github.com/acon96/home-llm) integration for Home Assistant by [@acon96](https://github.com/acon96/home-llm) 
+
+---
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/skyeharris)
