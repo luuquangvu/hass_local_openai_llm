@@ -60,16 +60,16 @@ def async_get_entities(hass) -> list:
     """
     extra_attributes_to_expose = DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE
 
-    def expose_attributes(attributes) -> list[str]:
+    def expose_attributes(_attributes) -> list[str]:
         result = []
         for attribute_name in extra_attributes_to_expose:
-            if attribute_name not in attributes:
+            if attribute_name not in _attributes:
                 continue
 
-            value = attributes[attribute_name]
+            value = _attributes[attribute_name]
             if value is not None:
                 # try to apply unit if present
-                unit_suffix = attributes.get(f"{attribute_name}_unit")
+                unit_suffix = _attributes.get(f"{attribute_name}_unit")
                 if unit_suffix:
                     value = f"{value} {unit_suffix}"
                 elif attribute_name == "temperature":

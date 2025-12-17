@@ -835,32 +835,31 @@ class LocalAiEntity(Entity):
             )
         )
 
+    @staticmethod
+    def _trim_history(messages: list, max_messages: int) -> list:
+        """
+        Trims excess messages from a single history.
 
-@staticmethod
-def _trim_history(messages: list, max_messages: int) -> list:
-    """
-    Trims excess messages from a single history.
+        This sets the max history to allow a configurable size history may take
+        up in the context window.
 
-    This sets the max history to allow a configurable size history may take
-    up in the context window.
+        Logic borrowed from the Ollama integration with thanks
+        """
+        if max_messages < 1:
+            # Keep all messages
+            return messages
 
-    Logic borrowed from the Ollama integration with thanks
-    """
-    if max_messages < 1:
-        # Keep all messages
+        # Ignore the in progress user message
+        num_previous_rounds = sum(m["role"] == "assistant" for m in messages) - 1
+        if num_previous_rounds >= max_messages:
+            # Trim history but keep system prompt (first message).
+            # Every other message should be an assistant message, so keep 2x
+            # message objects. Also keep the last in progress user message
+            num_keep = 2 * max_messages + 1
+            drop_index = len(messages) - num_keep
+            messages = [
+                messages[0],
+                *messages[int(drop_index) :],
+            ]
+
         return messages
-
-    # Ignore the in progress user message
-    num_previous_rounds = sum(m["role"] == "assistant" for m in messages) - 1
-    if num_previous_rounds >= max_messages:
-        # Trim history but keep system prompt (first message).
-        # Every other message should be an assistant message, so keep 2x
-        # message objects. Also keep the last in progress user message
-        num_keep = 2 * max_messages + 1
-        drop_index = len(messages) - num_keep
-        messages = [
-            messages[0],
-            *messages[int(drop_index) :],
-        ]
-
-    return messages

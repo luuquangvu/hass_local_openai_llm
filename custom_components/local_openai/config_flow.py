@@ -119,7 +119,7 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
     @staticmethod
     def strip_model_pathing(model_name: str) -> str:
         """llama.cpp at the very least will keep the full model file path supplied from the CLI so lets look to strip that and any .gguf extension."""
-        matches = re.search(r"([^\/]*)\.gguf$", model_name.strip())
+        matches = re.search(r"([^/]*)\.gguf$", model_name.strip())
         return matches[1] if matches else model_name
 
 
@@ -135,7 +135,9 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             for api in llm.async_get_apis(self.hass)
         ]
 
-    async def get_schema(self, options: dict = {}):
+    async def get_schema(self, options=None):
+        if options is None:
+            options = {}
         llm_apis = self.get_llm_apis()
         client = self._get_entry().runtime_data
 
@@ -295,7 +297,9 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
 class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
-    async def get_schema(self, options: dict = {}):
+    async def get_schema(self, options=None):
+        if options is None:
+            options = {}
         try:
             client = self._get_entry().runtime_data
             response = await client.models.list()
