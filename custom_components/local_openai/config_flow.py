@@ -339,15 +339,15 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
                 ),
                 vol.Optional(
                     CONF_STRIP_EMOJIS,
-                    default=options.get(CONF_STRIP_EMOJIS, False),
+                    default=options.get(CONF_STRIP_EMOJIS, True),
                 ): bool,
                 vol.Optional(
                     CONF_STRIP_EMPHASIS,
-                    default=options.get(CONF_STRIP_EMPHASIS, False),
+                    default=options.get(CONF_STRIP_EMPHASIS, True),
                 ): bool,
                 vol.Optional(
                     CONF_STRIP_LATEX,
-                    default=options.get(CONF_STRIP_LATEX, False),
+                    default=options.get(CONF_STRIP_LATEX, True),
                 ): bool,
                 vol.Optional(
                     CONF_TEMPERATURE,
