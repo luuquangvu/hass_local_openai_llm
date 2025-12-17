@@ -8,6 +8,6 @@
   "documentation": "https://github.com/luuquangvu/hass_local_openai_llm",
   "integration_type": "service",
   "iot_class": "local_polling",
-  "requirements": ["openai>=2.8.0", "demoji>=1.1.0", "webcolors>=24.8.0"],
+  "requirements": ["openai>=2.8.0", "demoji>=1.1.0", "webcolors>=24.8.0", "pylatexenc>=2.10"],
   "version": "1.0.0"
 }

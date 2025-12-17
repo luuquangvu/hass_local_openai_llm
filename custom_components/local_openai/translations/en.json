@@ -29,6 +29,7 @@
             "llm_hass_api": "Tool Providers",
             "strip_emojis": "Strip emojis from the response",
             "strip_emphasis": "Strip Markdown emphasis markers from the response",
+            "strip_latex": "Strip LaTeX commands from the response",
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
             "max_message_history": "Maximum message history size (0 means no limit)",
@@ -48,6 +49,7 @@
             "llm_hass_api": "Tool Providers",
             "strip_emojis": "Strip emojis from the response",
             "strip_emphasis": "Strip Markdown emphasis markers from the response",
+            "strip_latex": "Strip LaTeX commands from the response",
             "suggested_value": "Suggested value",
             "temperature": "Temperature",
             "max_message_history": "Maximum message history size (0 means no limit)",
@@ -73,7 +75,28 @@
     "ai_task_data": {
       "step": {
         "user": {
+          "title": "Configure the new AI task agent",
           "data": {
+            "model": "Model",
+            "strip_emojis": "Strip emojis from the response",
+            "strip_emphasis": "Strip Markdown emphasis markers from the response",
+            "strip_latex": "Strip LaTeX commands from the response",
+            "temperature": "Temperature"
+          },
+          "data_description": {
+            "model": "The model to use for the AI Task agent"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure the AI task agent",
+          "data": {
+            "model": "Model",
+            "strip_emojis": "Strip emojis from the response",
+            "strip_emphasis": "Strip Markdown emphasis markers from the response",
+            "strip_latex": "Strip LaTeX commands from the response",
+            "temperature": "Temperature"
+          },
+          "data_description": {
             "model": "The model to use for the AI Task agent"
           }
         }
@@ -86,29 +109,6 @@
         "cannot_connect": "Could not communicate with the server",
         "unknown": "An unknown error occurred",
         "reconfigure_successful": "AI Task Agent has been reconfigured"
-      }
-    }
-  },
-  "options": {
-    "step": {
-      "reconfigure": {
-        "title": "Reconfigure the conversation agent",
-        "data": {
-          "model": "Model",
-          "prompt": "System Prompt",
-          "llm_hass_api": "Tool Providers",
-          "strip_emojis": "Strip emojis from the response",
-          "strip_emphasis": "Strip Markdown emphasis markers from the response",
-          "suggested_value": "Suggested value",
-          "temperature": "Temperature",
-          "max_message_history": "Maximum message history size (0 means no limit)",
-          "manual_prompting": "Full manual prompting",
-          "parallel_tool_calls": "Parallel tool calling"
-        },
-        "data_description": {
-          "model": "The model to use for the conversation agent",
-          "prompt": "Instruct how the LLM should respond. This can be a template."
-        }
       }
     }
   },

@@ -42,6 +42,7 @@ from .const import (
     CONF_SERVER_NAME,
     CONF_STRIP_EMOJIS,
     CONF_STRIP_EMPHASIS,
+    CONF_STRIP_LATEX,
     CONF_TEMPERATURE,
     DOMAIN,
     LOGGER,
@@ -202,6 +203,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                     default=options.get(CONF_STRIP_EMPHASIS, True),
                 ): bool,
                 vol.Optional(
+                    CONF_STRIP_LATEX,
+                    default=options.get(CONF_STRIP_LATEX, True),
+                ): bool,
+                vol.Optional(
                     CONF_MANUAL_PROMPTING,
                     default=options.get(CONF_MANUAL_PROMPTING, False),
                 ): bool,
@@ -290,6 +295,67 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
 class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
+    async def get_schema(self, options: dict = {}):
+        try:
+            client = self._get_entry().runtime_data
+            response = await client.models.list()
+            downloaded_models: list[SelectOptionDict] = [
+                SelectOptionDict(
+                    label=model.id,
+                    value=model.id,
+                )
+                for model in response.data
+            ]
+        except OpenAIError as err:
+            LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
+            downloaded_models = []
+        except Exception as err:
+            LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
+            downloaded_models = []
+
+        default_model_value = options.get(CONF_MODEL)
+        if not default_model_value and downloaded_models:
+            default_model_value = downloaded_models[0]["value"]
+        default_model = default_model_value or "Local"
+
+        default_title = self.strip_model_pathing(default_model)
+        default_name = options.get(CONF_NAME) or f"{default_title} AI Task"
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    CONF_NAME,
+                    default=default_name,
+                ): str,
+                vol.Required(
+                    CONF_MODEL,
+                    default=default_model,
+                ): SelectSelector(
+                    SelectSelectorConfig(options=downloaded_models, custom_value=True)
+                ),
+                vol.Optional(
+                    CONF_STRIP_EMOJIS,
+                    default=options.get(CONF_STRIP_EMOJIS, False),
+                ): bool,
+                vol.Optional(
+                    CONF_STRIP_EMPHASIS,
+                    default=options.get(CONF_STRIP_EMPHASIS, False),
+                ): bool,
+                vol.Optional(
+                    CONF_STRIP_LATEX,
+                    default=options.get(CONF_STRIP_LATEX, False),
+                ): bool,
+                vol.Optional(
+                    CONF_TEMPERATURE,
+                    default=options.get(CONF_TEMPERATURE, 1),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=1, step=0.05, mode=NumberSelectorMode.SLIDER
+                    )
+                ),
+            }
+        )
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
@@ -308,44 +374,37 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
 
             return self.async_create_entry(title=entry_title, data=user_input)
 
-        try:
-            client = self._get_entry().runtime_data
-            response = await client.models.list()
-            downloaded_models: list[SelectOptionDict] = [
-                SelectOptionDict(
-                    label=model.id,
-                    value=model.id,
-                )
-                for model in response.data
-            ]
-        except OpenAIError as err:
-            LOGGER.exception(f"OpenAI Error retrieving models list: {err}")
-            downloaded_models = []
-        except Exception as err:
-            LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
-            downloaded_models = []
-
-        default_model = (
-            downloaded_models[0].get("value") if downloaded_models else "Local"
-        )
-        default_name = f"{self.strip_model_pathing(default_model)} AI Task"
-
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_NAME,
-                        default=default_name,
-                    ): str,
-                    vol.Required(
-                        CONF_MODEL,
-                        default=default_model,
-                    ): SelectSelector(
-                        SelectSelectorConfig(
-                            options=downloaded_models, custom_value=True
-                        )
-                    ),
-                }
-            ),
+            data_schema=await self.get_schema(),
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """User flow to reconfigure a sensor subentry."""
+        if user_input is not None:
+            user_input = user_input.copy()
+            raw_name = user_input.get(CONF_NAME)
+            custom_name = raw_name.strip() if isinstance(raw_name, str) else None
+            if custom_name:
+                user_input[CONF_NAME] = custom_name
+            else:
+                user_input.pop(CONF_NAME, None)
+
+            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
+            entry_title = custom_name or f"{model_name} AI Task"
+
+            return self.async_update_and_abort(
+                self._get_entry(),
+                self._get_reconfigure_subentry(),
+                title=entry_title,
+                data=user_input,
+            )
+
+        options = self._get_reconfigure_subentry().data.copy()
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=await self.get_schema(options),
         )

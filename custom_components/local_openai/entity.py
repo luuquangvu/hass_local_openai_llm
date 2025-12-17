@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import mimetypes
+import re
 import unicodedata
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Literal, cast
 
@@ -20,6 +21,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import llm
 from homeassistant.helpers.entity import Entity
 from openai._streaming import AsyncStream
+from pylatexenc.latex2text import LatexNodes2Text
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
@@ -47,12 +49,26 @@ from .const import (
     CONF_PARALLEL_TOOL_CALLS,
     CONF_STRIP_EMOJIS,
     CONF_STRIP_EMPHASIS,
+    CONF_STRIP_LATEX,
     CONF_TEMPERATURE,
     DOMAIN,
     GEMINI_MODELS,
     LOGGER,
 )
 from .prompt import format_custom_prompt
+
+
+async def _strip_emojis(text: str) -> str:
+    """Strip emojis from text."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, demoji.replace, text, "")
+
+
+async def _latex_to_text(text: str) -> str:
+    """Convert LaTeX to plain text."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, LatexNodes2Text().latex_to_text, text)
+
 
 # Max number of back and forth with the LLM to generate a response
 MAX_TOOL_ITERATIONS = 10
@@ -148,6 +164,33 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
         idx = new_idx
 
     return "".join(output_parts), ""
+
+
+def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
+    """
+    Check the buffer for incomplete LaTeX patterns.
+    Returns (safe_to_process, keep_in_buffer).
+    """
+    if flush or not buffer:
+        return buffer, ""
+
+    if buffer.count("$") % 2 != 0:
+        last_dollar = buffer.rfind("$")
+        if last_dollar != -1:
+            return buffer[:last_dollar], buffer[last_dollar:]
+
+    match = re.search(r"(\\[a-zA-Z]*)$", buffer)
+    if match:
+        start_index = match.start(1)
+        return buffer[:start_index], buffer[start_index:]
+
+    last_backslash = buffer.rfind("\\")
+    if last_backslash != -1:
+        tail = buffer[last_backslash:]
+        if tail.count("{") > tail.count("}"):
+            return buffer[:last_backslash], buffer[last_backslash:]
+
+    return buffer, ""
 
 
 def _is_gemini_model(model: str | None) -> bool:
@@ -456,15 +499,16 @@ async def _transform_stream(
     stream: AsyncStream[ChatCompletionChunk],
     strip_emojis: bool,
     strip_emphasis: bool,
+    strip_latex: bool,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict, None]:
     """Transform a streaming OpenAI response to ChatLog format."""
     new_msg = True
     pending_think = ""
     in_think = False
     seen_visible = False
-    loop = asyncio.get_running_loop()
     pending_tool_calls: list[dict] = []
     pending_emphasis: str = ""
+    pending_latex: str = ""
 
     async for event in stream:
         chunk: conversation.AssistantContentDeltaDict = {}
@@ -479,6 +523,7 @@ async def _transform_stream(
             chunk["role"] = cast("Literal['assistant']", delta.role)
             new_msg = False
             pending_emphasis = ""
+            pending_latex = ""
 
         if choice.finish_reason and pending_tool_calls:
             chunk["tool_calls"] = [
@@ -511,7 +556,14 @@ async def _transform_stream(
         if (content := delta.content) is not None:
             LOGGER.debug("Raw content from API stream: %s", content)
             if strip_emojis:
-                content = await loop.run_in_executor(None, demoji.replace, content, "")
+                content = await _strip_emojis(content)
+
+            if strip_latex:
+                pending_latex += content
+                content, pending_latex = _consume_latex(pending_latex, flush=False)
+                if content:
+                    content = await _latex_to_text(content)
+
             if strip_emphasis and content:
                 pending_emphasis += content
                 content, pending_emphasis = _consume_emphasis(
@@ -519,17 +571,29 @@ async def _transform_stream(
                 )
             elif not strip_emphasis:
                 pending_emphasis = ""
-            else:
-                content = ""
+            elif not content:
+                pass
 
             LOGGER.debug("Content after filtering stream chunk: %s", content)
             if content:
                 content_segments.append(content)
 
-        if strip_emphasis and choice.finish_reason and pending_emphasis:
-            flushed, pending_emphasis = _consume_emphasis(pending_emphasis, flush=True)
-            if flushed:
-                content_segments.append(flushed)
+        if choice.finish_reason:
+            if strip_latex and pending_latex:
+                flushed_latex, _ = _consume_latex(pending_latex, flush=True)
+                if flushed_latex:
+                    flushed_latex = await _latex_to_text(flushed_latex)
+                    if strip_emphasis:
+                        pending_emphasis += flushed_latex
+                    else:
+                        content_segments.append(flushed_latex)
+
+            if strip_emphasis and pending_emphasis:
+                flushed, pending_emphasis = _consume_emphasis(
+                    pending_emphasis, flush=True
+                )
+                if flushed:
+                    content_segments.append(flushed)
 
         combined_output = ""
         for segment in content_segments:
@@ -586,6 +650,7 @@ class LocalAiEntity(Entity):
         options = self.subentry.data
         strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
         strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
+        strip_latex = bool(options.get(CONF_STRIP_LATEX))
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 1)
         parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
@@ -629,6 +694,7 @@ class LocalAiEntity(Entity):
                 messages,
                 strip_emojis,
                 strip_emphasis,
+                strip_latex,
                 temperature,
             )
             return
@@ -667,7 +733,7 @@ class LocalAiEntity(Entity):
                         async for content in chat_log.async_add_delta_content_stream(
                             self.entity_id,
                             _transform_stream(
-                                result_stream, strip_emojis, strip_emphasis
+                                result_stream, strip_emojis, strip_emphasis, strip_latex
                             ),
                         )
                         if (
@@ -689,6 +755,7 @@ class LocalAiEntity(Entity):
         messages: list[ChatCompletionMessageParam],
         strip_emojis: bool,
         strip_emphasis: bool,
+        strip_latex: bool,
         temperature: float,
     ) -> None:
         """Generate an image response using the Responses API."""
@@ -739,7 +806,9 @@ class LocalAiEntity(Entity):
         if text_output:
             text_output = text_output.strip()
         if strip_emojis and text_output:
-            text_output = demoji.replace(text_output, "")
+            text_output = await _strip_emojis(text_output)
+        if strip_latex and text_output:
+            text_output = await _latex_to_text(text_output)
         if strip_emphasis and text_output:
             text_output, _ = _consume_emphasis(text_output, flush=True)
 
@@ -766,31 +835,32 @@ class LocalAiEntity(Entity):
             )
         )
 
-    @staticmethod
-    def _trim_history(messages: list, max_messages: int) -> list:
-        """
-        Trims excess messages from a single history.
 
-        This sets the max history to allow a configurable size history may take
-        up in the context window.
+@staticmethod
+def _trim_history(messages: list, max_messages: int) -> list:
+    """
+    Trims excess messages from a single history.
 
-        Logic borrowed from the Ollama integration with thanks
-        """
-        if max_messages < 1:
-            # Keep all messages
-            return messages
+    This sets the max history to allow a configurable size history may take
+    up in the context window.
 
-        # Ignore the in progress user message
-        num_previous_rounds = sum(m["role"] == "assistant" for m in messages) - 1
-        if num_previous_rounds >= max_messages:
-            # Trim history but keep system prompt (first message).
-            # Every other message should be an assistant message, so keep 2x
-            # message objects. Also keep the last in progress user message
-            num_keep = 2 * max_messages + 1
-            drop_index = len(messages) - num_keep
-            messages = [
-                messages[0],
-                *messages[int(drop_index) :],
-            ]
-
+    Logic borrowed from the Ollama integration with thanks
+    """
+    if max_messages < 1:
+        # Keep all messages
         return messages
+
+    # Ignore the in progress user message
+    num_previous_rounds = sum(m["role"] == "assistant" for m in messages) - 1
+    if num_previous_rounds >= max_messages:
+        # Trim history but keep system prompt (first message).
+        # Every other message should be an assistant message, so keep 2x
+        # message objects. Also keep the last in progress user message
+        num_keep = 2 * max_messages + 1
+        drop_index = len(messages) - num_keep
+        messages = [
+            messages[0],
+            *messages[int(drop_index) :],
+        ]
+
+    return messages
