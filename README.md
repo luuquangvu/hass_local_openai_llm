@@ -51,7 +51,8 @@ This repository tracks the upstream [Local OpenAI LLM](https://github.com/skye-h
 
 1. Navigate to `Settings` → `Devices & Services` in Home Assistant.
 2. Click `Add Integration` and search for **Local OpenAI LLM**.
-3. Enter the connection details for your local LLM endpoint (URL, API key, and any optional parameters).
+3. Enter the connection details for your local LLM endpoint, including the Server URL, and optionally the API key and Server Name.
+   - Server URL: http://host:port/v1 (for example, http://127.0.0.1:8000/v1)
 4. Complete the setup wizard to expose the conversation and image generation services.
 
 ---

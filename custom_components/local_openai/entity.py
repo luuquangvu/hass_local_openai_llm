@@ -651,6 +651,10 @@ class LocalAiEntity(Entity):
         strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
         strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
         strip_latex = bool(options.get(CONF_STRIP_LATEX))
+
+        if structure:
+            # LaTeX processing breaks JSON syntax (e.g. braces)
+            strip_latex = False
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 1)
         parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
