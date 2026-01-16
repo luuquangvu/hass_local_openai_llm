@@ -52,7 +52,7 @@ from .const import (
     CONF_STRIP_LATEX,
     CONF_TEMPERATURE,
     DOMAIN,
-    GEMINI_MODELS,
+    GEMINI_MODEL_PREFIXES,
     LOGGER,
 )
 from .prompt import format_custom_prompt
@@ -197,8 +197,7 @@ def _is_gemini_model(model: str | None) -> bool:
     """Return True if the model is identified as a Gemini model."""
     if not model:
         return False
-    model_name = model.lower()
-    return any(identifier in model_name for identifier in GEMINI_MODELS)
+    return model.lower().startswith(GEMINI_MODEL_PREFIXES)
 
 
 def _attachment_supported(mime_type: str, model: str | None) -> bool:

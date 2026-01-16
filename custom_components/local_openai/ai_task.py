@@ -14,7 +14,7 @@ from homeassistant.util.json import json_loads
 from openai.types.responses.response_output_item import ImageGenerationCall
 
 from . import LocalAiConfigEntry
-from .const import GEMINI_MODELS, LOGGER
+from .const import GEMINI_MODEL_PREFIXES, LOGGER
 from .entity import LocalAiEntity
 
 
@@ -52,7 +52,7 @@ class LocalAITaskEntity(
             | ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
         )
         model_name = self.model.lower()
-        if any(model_id in model_name for model_id in GEMINI_MODELS):
+        if model_name.startswith(GEMINI_MODEL_PREFIXES):
             features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
         self._attr_supported_features = features
 
