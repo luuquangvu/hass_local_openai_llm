@@ -58,6 +58,9 @@ from .const import (
 from .prompt import format_custom_prompt
 
 
+LATEX_MATH_INDICATOR = re.compile(r"\\[a-zA-Z]+|\$(?!\d)|[_^{]")
+
+
 async def _strip_emojis(text: str) -> str:
     """Strip emojis from text."""
     loop = asyncio.get_running_loop()
@@ -65,9 +68,16 @@ async def _strip_emojis(text: str) -> str:
 
 
 async def _latex_to_text(text: str) -> str:
-    """Convert LaTeX to plain text."""
+    """Convert LaTeX to plain text while protecting common characters."""
+    if not LATEX_MATH_INDICATOR.search(text):
+        return text
+
+    def _safe_latex_convert(t: str) -> str:
+        escaped_t = re.sub(r"(?<!\\)([%&])", r"\\\1", t)
+        return LatexNodes2Text().latex_to_text(escaped_t)
+
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, LatexNodes2Text().latex_to_text, text)
+    return await loop.run_in_executor(None, _safe_latex_convert, text)
 
 
 # Max number of back and forth with the LLM to generate a response
