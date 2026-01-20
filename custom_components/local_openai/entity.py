@@ -54,11 +54,11 @@ from .const import (
     DOMAIN,
     GEMINI_MODEL_PREFIXES,
     LOGGER,
+    LATEX_MATH_SPAN,
+    AUDIO_MIME_TYPE_MAP,
+    MAX_TOOL_ITERATIONS,
 )
 from .prompt import format_custom_prompt
-
-
-LATEX_MATH_INDICATOR = re.compile(r"\\[a-zA-Z]+|\$(?!\d)|[_^{]")
 
 
 async def _strip_emojis(text: str) -> str:
@@ -67,32 +67,22 @@ async def _strip_emojis(text: str) -> str:
     return await loop.run_in_executor(None, demoji.replace, text, "")
 
 
+def _sync_latex_to_text(text: str) -> str:
+    """Synchronous helper to convert LaTeX to text."""
+
+    def replace(match):
+        span = match.group(0)
+        return LatexNodes2Text(
+            keep_comments=True, keep_braced_groups=True
+        ).latex_to_text(span)
+
+    return LATEX_MATH_SPAN.sub(replace, text)
+
+
 async def _latex_to_text(text: str) -> str:
-    """Convert LaTeX to plain text while protecting common characters."""
-    if not LATEX_MATH_INDICATOR.search(text):
-        return text
-
-    def _safe_latex_convert(t: str) -> str:
-        escaped_t = re.sub(r"(?<!\\)([%&])", r"\\\1", t)
-        return LatexNodes2Text().latex_to_text(escaped_t)
-
+    """Convert LaTeX to text asynchronously."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _safe_latex_convert, text)
-
-
-# Max number of back and forth with the LLM to generate a response
-MAX_TOOL_ITERATIONS = 10
-
-AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
-    "audio/mpeg": "mp3",
-    "audio/mp3": "mp3",
-    "audio/mpeg3": "mp3",
-    "audio/x-mpeg-3": "mp3",
-    "audio/x-mp3": "mp3",
-    "audio/wav": "wav",
-    "audio/x-wav": "wav",
-    "audio/vnd.wave": "wav",
-}
+    return await loop.run_in_executor(None, _sync_latex_to_text, text)
 
 
 def _is_punctuation(char: str) -> bool:
@@ -184,10 +174,21 @@ def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
     if flush or not buffer:
         return buffer, ""
 
+    if buffer.count("$$") % 2 != 0:
+        last_double = buffer.rfind("$$")
+        return buffer[:last_double], buffer[last_double:]
+
     if buffer.count("$") % 2 != 0:
-        last_dollar = buffer.rfind("$")
-        if last_dollar != -1:
-            return buffer[:last_dollar], buffer[last_dollar:]
+        last_dollar_idx = buffer.rfind("$")
+        following_text = buffer[last_dollar_idx + 1 :]
+        if not following_text:
+            return buffer[:last_dollar_idx], buffer[last_dollar_idx:]
+
+        first_char = following_text[0]
+        if first_char.isspace():
+            return buffer, ""
+
+        return buffer[:last_dollar_idx], buffer[last_dollar_idx:]
 
     match = re.search(r"(\\[a-zA-Z]*)$", buffer)
     if match:
@@ -198,6 +199,8 @@ def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
     if last_backslash != -1:
         tail = buffer[last_backslash:]
         if tail.count("{") > tail.count("}"):
+            return buffer[:last_backslash], buffer[last_backslash:]
+        if tail == "\\" or tail == "\\[" or tail == "\\(":
             return buffer[:last_backslash], buffer[last_backslash:]
 
     return buffer, ""
@@ -660,10 +663,6 @@ class LocalAiEntity(Entity):
         strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
         strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
         strip_latex = bool(options.get(CONF_STRIP_LATEX))
-
-        if structure:
-            # LaTeX processing breaks JSON syntax (e.g. braces)
-            strip_latex = False
         max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 1)
         parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)

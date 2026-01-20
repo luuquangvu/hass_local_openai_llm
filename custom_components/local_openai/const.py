@@ -1,6 +1,8 @@
 """Constants for the Local OpenAI LLM integration."""
 
 import logging
+import re
+from typing import Literal
 
 from homeassistant.const import CONF_LLM_HASS_API, CONF_PROMPT
 from homeassistant.helpers import llm
@@ -26,3 +28,26 @@ RECOMMENDED_CONVERSATION_OPTIONS = {
     CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
     CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
 }
+
+MAX_TOOL_ITERATIONS = 10
+
+AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/mpeg3": "mp3",
+    "audio/x-mpeg-3": "mp3",
+    "audio/x-mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/vnd.wave": "wav",
+}
+
+LATEX_MATH_SPAN = re.compile(
+    r"""
+    \$\$[\s\S]+?\$\$
+  | \$(?!\s)[^$\n]+?(?<!\s)\$
+  | \\\([^)]*\\\)
+  | \\\[[^]]*\\\]
+    """,
+    re.VERBOSE,
+)
