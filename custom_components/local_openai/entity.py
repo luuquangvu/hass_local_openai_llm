@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
+import orjson
 import mimetypes
 import re
 import unicodedata
@@ -392,7 +392,7 @@ async def _convert_content_to_chat_message(
         return ChatCompletionToolMessageParam(
             role="tool",
             tool_call_id=content.tool_call_id,
-            content=json.dumps(content.tool_result),
+            content=orjson.dumps(content.tool_result).decode("utf-8"),
         )
 
     role: Literal["user", "assistant", "system"] = content.role
@@ -487,7 +487,7 @@ async def _convert_content_to_chat_message(
                     type="function",
                     id=tool_call.id,
                     function=Function(
-                        arguments=json.dumps(tool_call.tool_args),
+                        arguments=orjson.dumps(tool_call.tool_args).decode("utf-8"),
                         name=tool_call.tool_name,
                     ),
                 )
@@ -501,8 +501,8 @@ async def _convert_content_to_chat_message(
 def _decode_tool_arguments(arguments: str) -> Any:
     """Decode tool call arguments."""
     try:
-        return json.loads(arguments)
-    except json.JSONDecodeError as err:
+        return orjson.loads(arguments)
+    except orjson.JSONDecodeError as err:
         LOGGER.error("Unexpected tool argument response: %s", err)
         raise HomeAssistantError(f"Unexpected tool argument response: {err}") from err
 
@@ -541,7 +541,7 @@ async def _transform_stream(
             chunk["tool_calls"] = [
                 llm.ToolInput(
                     tool_name=tool_call["name"],
-                    tool_args=json.loads(tool_call["args"])
+                    tool_args=orjson.loads(tool_call["args"])
                     if tool_call["args"]
                     else {},
                 )
