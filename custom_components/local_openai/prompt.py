@@ -1,3 +1,5 @@
+from typing import Any
+
 import webcolors
 from homeassistant.components.conversation.const import DOMAIN as CONVERSATION_DOMAIN
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
@@ -120,7 +122,7 @@ def async_get_entities(hass) -> list:
     return devices
 
 
-def async_get_exposed_entities(hass) -> tuple[dict[str, str], list[str]]:
+def async_get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """
     Gather exposed entity states.
 

@@ -406,7 +406,9 @@ async def _convert_content_to_chat_message(
 
     role: Literal["user", "assistant", "system"] = content.role
     if role == "system" and content.content:
-        return ChatCompletionSystemMessageParam(role="system", content=content.content)
+        return ChatCompletionSystemMessageParam(
+            role="system", content=str(content.content)
+        )
 
     if role == "user":
         content_parts: list[ChatCompletionContentPartParam] = []
