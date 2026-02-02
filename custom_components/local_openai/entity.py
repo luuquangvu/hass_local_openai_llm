@@ -383,6 +383,15 @@ def b64_file(file_path):
     return base64.b64encode(file_path.read_bytes()).decode("utf-8")
 
 
+def _stringify_keys(obj: Any) -> Any:
+    """Recursively convert dictionary keys to strings."""
+    if isinstance(obj, dict):
+        return {str(k): _stringify_keys(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_stringify_keys(v) for v in obj]
+    return obj
+
+
 async def _convert_content_to_chat_message(
     content: conversation.Content,
     model: str | None = None,
@@ -392,7 +401,7 @@ async def _convert_content_to_chat_message(
         return ChatCompletionToolMessageParam(
             role="tool",
             tool_call_id=content.tool_call_id,
-            content=orjson.dumps(content.tool_result).decode("utf-8"),
+            content=orjson.dumps(_stringify_keys(content.tool_result)).decode("utf-8"),
         )
 
     role: Literal["user", "assistant", "system"] = content.role
@@ -487,7 +496,9 @@ async def _convert_content_to_chat_message(
                     type="function",
                     id=tool_call.id,
                     function=Function(
-                        arguments=orjson.dumps(tool_call.tool_args).decode("utf-8"),
+                        arguments=orjson.dumps(
+                            _stringify_keys(tool_call.tool_args)
+                        ).decode("utf-8"),
                         name=tool_call.tool_name,
                     ),
                 )
@@ -681,26 +692,28 @@ class LocalAiEntity(Entity):
                 for tool in chat_log.llm_api.tools
             ]
 
-        messages = self._trim_history(
-            [
-                m
-                for content in chat_log.content
-                if (m := await _convert_content_to_chat_message(content, self.model))
-            ],
-            max_message_history,
-        )
-
-        # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
-        # Additional variables for tools and devices are exposed to the jinja prompt
-        if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-            prompt = format_custom_prompt(
-                self.hass, options.get(CONF_PROMPT), user_input, tools
-            )
-            messages[0] = ChatCompletionSystemMessageParam(
-                role="system", content=prompt
-            )
-
         if force_image:
+            messages = self._trim_history(
+                [
+                    m
+                    for content in chat_log.content
+                    if (
+                        m := await _convert_content_to_chat_message(content, self.model)
+                    )
+                ],
+                max_message_history,
+            )
+
+            # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
+            # Additional variables for tools and devices are exposed to the jinja prompt
+            if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
+                prompt = format_custom_prompt(
+                    self.hass, options.get(CONF_PROMPT), user_input, tools
+                )
+                messages[0] = ChatCompletionSystemMessageParam(
+                    role="system", content=prompt
+                )
+
             await self._async_handle_image_response(
                 chat_log,
                 messages,
@@ -710,8 +723,6 @@ class LocalAiEntity(Entity):
                 temperature,
             )
             return
-
-        model_args["messages"] = messages
 
         if tools:
             model_args["tools"] = tools
@@ -729,6 +740,27 @@ class LocalAiEntity(Entity):
         client = self.entry.runtime_data
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
+            messages = self._trim_history(
+                [
+                    m
+                    for content in chat_log.content
+                    if (
+                        m := await _convert_content_to_chat_message(content, self.model)
+                    )
+                ],
+                max_message_history,
+            )
+
+            if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
+                prompt = format_custom_prompt(
+                    self.hass, options.get(CONF_PROMPT), user_input, tools
+                )
+                messages[0] = ChatCompletionSystemMessageParam(
+                    role="system", content=prompt
+                )
+
+            model_args["messages"] = messages
+
             LOGGER.debug("Sending chat request to API with payload: %s", model_args)
             try:
                 result_stream = await client.chat.completions.create(
@@ -739,24 +771,16 @@ class LocalAiEntity(Entity):
                 raise HomeAssistantError("Error talking to API") from err
 
             try:
-                model_args["messages"].extend(
-                    [
-                        msg
-                        async for content in chat_log.async_add_delta_content_stream(
-                            self.entity_id,
-                            _transform_stream(
-                                result_stream, strip_emojis, strip_emphasis, strip_latex
-                            ),
-                        )
-                        if (
-                            msg := await _convert_content_to_chat_message(
-                                content, self.model
-                            )
-                        )
-                    ]
-                )
+                async for _ in chat_log.async_add_delta_content_stream(
+                    self.entity_id,
+                    _transform_stream(
+                        result_stream, strip_emojis, strip_emphasis, strip_latex
+                    ),
+                ):
+                    pass
             except Exception as err:  # pylint: disable=broad-except
                 LOGGER.error("Error handling API response: %s", err)
+                break
 
             if not chat_log.unresponded_tool_results:
                 break
