@@ -694,28 +694,26 @@ class LocalAiEntity(Entity):
                 for tool in chat_log.llm_api.tools
             ]
 
-        if force_image:
-            messages = self._trim_history(
-                [
-                    m
-                    for content in chat_log.content
-                    if (
-                        m := await _convert_content_to_chat_message(content, self.model)
-                    )
-                ],
-                max_message_history,
+        messages = self._trim_history(
+            [
+                m
+                for content in chat_log.content
+                if (m := await _convert_content_to_chat_message(content, self.model))
+            ],
+            max_message_history,
+        )
+
+        # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
+        # Additional variables for tools and devices are exposed to the jinja prompt
+        if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
+            prompt = format_custom_prompt(
+                self.hass, options.get(CONF_PROMPT), user_input, tools
+            )
+            messages[0] = ChatCompletionSystemMessageParam(
+                role="system", content=prompt
             )
 
-            # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
-            # Additional variables for tools and devices are exposed to the jinja prompt
-            if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-                prompt = format_custom_prompt(
-                    self.hass, options.get(CONF_PROMPT), user_input, tools
-                )
-                messages[0] = ChatCompletionSystemMessageParam(
-                    role="system", content=prompt
-                )
-
+        if force_image:
             await self._async_handle_image_response(
                 chat_log,
                 messages,
@@ -725,6 +723,8 @@ class LocalAiEntity(Entity):
                 temperature,
             )
             return
+
+        model_args["messages"] = messages
 
         if tools:
             model_args["tools"] = tools
@@ -742,27 +742,6 @@ class LocalAiEntity(Entity):
         client = self.entry.runtime_data
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
-            messages = self._trim_history(
-                [
-                    m
-                    for content in chat_log.content
-                    if (
-                        m := await _convert_content_to_chat_message(content, self.model)
-                    )
-                ],
-                max_message_history,
-            )
-
-            if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-                prompt = format_custom_prompt(
-                    self.hass, options.get(CONF_PROMPT), user_input, tools
-                )
-                messages[0] = ChatCompletionSystemMessageParam(
-                    role="system", content=prompt
-                )
-
-            model_args["messages"] = messages
-
             LOGGER.debug("Sending chat request to API with payload: %s", model_args)
             try:
                 result_stream = await client.chat.completions.create(
@@ -773,13 +752,22 @@ class LocalAiEntity(Entity):
                 raise HomeAssistantError("Error talking to API") from err
 
             try:
-                async for _ in chat_log.async_add_delta_content_stream(
-                    self.entity_id,
-                    _transform_stream(
-                        result_stream, strip_emojis, strip_emphasis, strip_latex
-                    ),
-                ):
-                    pass
+                model_args["messages"].extend(
+                    [
+                        msg
+                        async for content in chat_log.async_add_delta_content_stream(
+                            self.entity_id,
+                            _transform_stream(
+                                result_stream, strip_emojis, strip_emphasis, strip_latex
+                            ),
+                        )
+                        if (
+                            msg := await _convert_content_to_chat_message(
+                                content, self.model
+                            )
+                        )
+                    ]
+                )
             except Exception as err:  # pylint: disable=broad-except
                 LOGGER.error("Error handling API response: %s", err)
                 break
