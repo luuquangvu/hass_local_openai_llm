@@ -628,11 +628,11 @@ async def _transform_stream(
         for segment in content_segments:
             # Buffer against partial tags like <th... or </th...
             text_to_process = segment
-            
-            # If we see a potential starting of a tag at the very end of segment, 
-            # we might want to buffer it, but <think> is long enough that 
+
+            # If we see a potential starting of a tag at the very end of segment,
+            # we might want to buffer it, but <think> is long enough that
             # we usually get it in chunks. For now, we process accurately:
-            
+
             if "<think>" in text_to_process:
                 before, after = text_to_process.split("<think>", 1)
                 if not in_think and before:
@@ -640,7 +640,7 @@ async def _transform_stream(
                     seen_visible = True
                 in_think = True
                 text_to_process = after
-                
+
             if in_think:
                 if "</think>" in text_to_process:
                     in_think = False

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import base64
 import binascii
-from json import JSONDecodeError
+import orjson
 
 from homeassistant.components import ai_task, conversation
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.util.json import json_loads
 from openai.types.responses.response_output_item import ImageGenerationCall
 
 from . import LocalAiConfigEntry
@@ -78,9 +77,9 @@ class LocalAITaskEntity(
                 data=text,
             )
         try:
-            data = json_loads(text)
+            data = orjson.loads(text)
             LOGGER.debug("Structured data from LLM for GenDataTask: %s", data)
-        except JSONDecodeError as err:
+        except orjson.JSONDecodeError as err:
             LOGGER.error("Failed to parse structured response from LLM: %s", err)
             raise HomeAssistantError("Error with structured response") from err
 
