@@ -13,7 +13,7 @@
     "demoji>=1.1.0",
     "webcolors>=25.10.0",
     "pylatexenc>=2.10",
-    "orjson>=3.11.3"
+    "orjson>=3.11.5"
   ],
   "version": "1.0.0"
 }
