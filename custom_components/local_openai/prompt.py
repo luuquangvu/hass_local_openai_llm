@@ -177,7 +177,7 @@ def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
     return entity_states, list(domains)
 
 
-async def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
+def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
     devices = get_entities(hass)
     LOGGER.debug("Exposed devices for prompt: %s", devices)
 
@@ -204,7 +204,7 @@ async def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
     )
 
     # Render prompt
-    rendered_prompt = await template.Template(
+    rendered_prompt = template.Template(
         agent_prompt,
         hass,
     ).async_render(

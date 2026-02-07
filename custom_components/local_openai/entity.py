@@ -720,7 +720,7 @@ class LocalAiEntity(Entity):
         ]
 
         if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-            prompt = await format_custom_prompt(
+            prompt = format_custom_prompt(
                 self.hass, options.get(CONF_PROMPT), user_input, tools
             )
             # Find the first system message to replace it, or insert at the beginning
