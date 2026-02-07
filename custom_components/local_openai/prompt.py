@@ -56,8 +56,9 @@ def closest_color(requested_color):
     return min_colors[min(min_colors.keys())]
 
 
-def async_get_entities(hass) -> list:
+def get_entities(hass) -> list:
     """
+    Gather exposed entities and their states.
     Lovingly borrowed from https://github.com/acon96/home-llm (_generate_system_prompt).
     """
     extra_attributes_to_expose = DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE
@@ -76,7 +77,9 @@ def async_get_entities(hass) -> list:
                     value = f"{value} {unit_suffix}"
                 elif attribute_name == "temperature":
                     # try to get unit or guess otherwise
-                    suffix = "F" if value > 50 else "C"
+                    suffix = _attributes.get("unit_of_measurement")
+                    if not suffix:
+                        suffix = "°F" if value > 50 else "°C"
                     value = f"{int(value)} {suffix}"
                 elif attribute_name == "rgb_color":
                     value = f"{closest_color(value)} {value}"
@@ -90,7 +93,7 @@ def async_get_entities(hass) -> list:
                 result.append(str(value))
         return result
 
-    entities_to_expose, domains = async_get_exposed_entities(hass)
+    entities_to_expose, domains = get_exposed_entities(hass)
     devices = []
     formatted_devices = ""
 
@@ -122,7 +125,7 @@ def async_get_entities(hass) -> list:
     return devices
 
 
-def async_get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
+def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """
     Gather exposed entity states.
 
@@ -174,8 +177,8 @@ def async_get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[st
     return entity_states, list(domains)
 
 
-def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
-    devices = async_get_entities(hass)
+async def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
+    devices = get_entities(hass)
     LOGGER.debug("Exposed devices for prompt: %s", devices)
 
     area: ar.AreaEntry | None = None
@@ -201,7 +204,7 @@ def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
     )
 
     # Render prompt
-    rendered_prompt = template.Template(
+    rendered_prompt = await template.Template(
         agent_prompt,
         hass,
     ).async_render(

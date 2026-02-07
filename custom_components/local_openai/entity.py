@@ -1,4 +1,4 @@
-"""Base entity for Open Router."""
+"""Base entity for Local OpenAI."""
 
 from __future__ import annotations
 
@@ -238,7 +238,12 @@ def _adjust_schema(schema: dict[str, Any]) -> None:
         for prop, prop_info in schema["properties"].items():
             _adjust_schema(prop_info)
             if prop not in schema["required"]:
-                prop_info["type"] = [prop_info["type"], "null"]
+                prop_type = prop_info.get("type")
+                if isinstance(prop_type, list):
+                    if "null" not in prop_type:
+                        prop_type.append("null")
+                elif prop_type:
+                    prop_info["type"] = [prop_type, "null"]
                 schema["required"].append(prop)
 
     elif schema["type"] == "array":
@@ -619,34 +624,50 @@ async def _transform_stream(
                 if flushed:
                     content_segments.append(flushed)
 
-        combined_output = ""
+        visible_output = ""
         for segment in content_segments:
-            if segment == "<think>":
+            # Buffer against partial tags like <th... or </th...
+            text_to_process = segment
+            
+            # If we see a potential starting of a tag at the very end of segment, 
+            # we might want to buffer it, but <think> is long enough that 
+            # we usually get it in chunks. For now, we process accurately:
+            
+            if "<think>" in text_to_process:
+                before, after = text_to_process.split("<think>", 1)
+                if not in_think and before:
+                    visible_output += before
+                    seen_visible = True
                 in_think = True
-                pending_think = ""
-
+                text_to_process = after
+                
             if in_think:
-                if segment == "</think>":
+                if "</think>" in text_to_process:
                     in_think = False
+                    thought, after = text_to_process.split("</think>", 1)
+                    pending_think += thought
                     if pending_think.strip():
                         LOGGER.debug(f"LLM Thought: {pending_think}")
                     pending_think = ""
-                elif segment != "<think>":
-                    pending_think = pending_think + segment
-            elif segment.strip():
-                seen_visible = True
+                    if after:
+                        visible_output += after
+                        seen_visible = True
+                else:
+                    pending_think += text_to_process
+            else:
+                visible_output += text_to_process
+                if text_to_process:
+                    seen_visible = True
 
-            combined_output += segment
-
-        if seen_visible and combined_output:
-            chunk["content"] = combined_output
+        if seen_visible and visible_output:
+            chunk["content"] = visible_output
 
         if seen_visible or chunk.get("tool_calls") or chunk.get("role"):
             yield chunk
 
 
 class LocalAiEntity(Entity):
-    """Base entity for Open Router."""
+    """Base entity for Local OpenAI."""
 
     _attr_has_entity_name = True
 
@@ -699,7 +720,7 @@ class LocalAiEntity(Entity):
         ]
 
         if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
-            prompt = format_custom_prompt(
+            prompt = await format_custom_prompt(
                 self.hass, options.get(CONF_PROMPT), user_input, tools
             )
             # Find the first system message to replace it, or insert at the beginning
@@ -772,7 +793,7 @@ class LocalAiEntity(Entity):
                     ]
                 )
             except Exception as err:  # pylint: disable=broad-except
-                LOGGER.error("Error handling API response: %s", err)
+                LOGGER.exception("Error handling API response: %s", err)
                 break
 
             if not chat_log.unresponded_tool_results:
