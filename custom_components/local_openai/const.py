@@ -17,7 +17,6 @@ CONF_STRIP_EMOJIS = "strip_emojis"
 CONF_STRIP_EMPHASIS = "strip_emphasis"
 CONF_STRIP_LATEX = "strip_latex"
 CONF_MANUAL_PROMPTING = "manual_prompting"
-CONF_MAX_MESSAGE_HISTORY = "max_message_history"
 CONF_TEMPERATURE = "temperature"
 CONF_PARALLEL_TOOL_CALLS = "parallel_tool_calls"
 

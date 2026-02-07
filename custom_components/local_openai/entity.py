@@ -45,7 +45,6 @@ from voluptuous_openapi import convert
 from . import LocalAiConfigEntry
 from .const import (
     CONF_MANUAL_PROMPTING,
-    CONF_MAX_MESSAGE_HISTORY,
     CONF_PARALLEL_TOOL_CALLS,
     CONF_STRIP_EMOJIS,
     CONF_STRIP_EMPHASIS,
@@ -676,7 +675,6 @@ class LocalAiEntity(Entity):
         strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
         strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
         strip_latex = bool(options.get(CONF_STRIP_LATEX))
-        max_message_history = options.get(CONF_MAX_MESSAGE_HISTORY, 0)
         temperature = options.get(CONF_TEMPERATURE, 1)
         parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
 
@@ -694,24 +692,29 @@ class LocalAiEntity(Entity):
                 for tool in chat_log.llm_api.tools
             ]
 
-        messages = self._trim_history(
-            [
-                m
-                for content in chat_log.content
-                if (m := await _convert_content_to_chat_message(content, self.model))
-            ],
-            max_message_history,
-        )
+        messages = [
+            m
+            for content in chat_log.content
+            if (m := await _convert_content_to_chat_message(content, self.model))
+        ]
 
-        # Full manual prompting - wipe out the HASS-compiled prompt, allow the user to take FULL CONTROL here
-        # Additional variables for tools and devices are exposed to the jinja prompt
         if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
             prompt = format_custom_prompt(
                 self.hass, options.get(CONF_PROMPT), user_input, tools
             )
-            messages[0] = ChatCompletionSystemMessageParam(
+            # Find the first system message to replace it, or insert at the beginning
+            new_system_message = ChatCompletionSystemMessageParam(
                 role="system", content=prompt
             )
+            found = False
+            for i, msg in enumerate(messages):
+                if msg["role"] == "system":
+                    messages[i] = new_system_message
+                    found = True
+                    break
+
+            if not found:
+                messages.insert(0, new_system_message)
 
         if force_image:
             await self._async_handle_image_response(
@@ -860,32 +863,3 @@ class LocalAiEntity(Entity):
                 native=image_call,
             )
         )
-
-    @staticmethod
-    def _trim_history(messages: list, max_messages: int) -> list:
-        """
-        Trims excess messages from a single history.
-
-        This sets the max history to allow a configurable size history may take
-        up in the context window.
-
-        Logic borrowed from the Ollama integration with thanks
-        """
-        if max_messages < 1:
-            # Keep all messages
-            return messages
-
-        # Ignore the in progress user message
-        num_previous_rounds = sum(m["role"] == "assistant" for m in messages) - 1
-        if num_previous_rounds >= max_messages:
-            # Trim history but keep system prompt (first message).
-            # Every other message should be an assistant message, so keep 2x
-            # message objects. Also keep the last in progress user message
-            num_keep = 2 * max_messages + 1
-            drop_index = len(messages) - num_keep
-            messages = [
-                messages[0],
-                *messages[int(drop_index) :],
-            ]
-
-        return messages

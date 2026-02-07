@@ -30,9 +30,7 @@
             "strip_emojis": "Strip emojis from the response",
             "strip_emphasis": "Strip Markdown emphasis markers from the response",
             "strip_latex": "Strip LaTeX commands from the response",
-            "suggested_value": "Suggested value",
             "temperature": "Temperature",
-            "max_message_history": "Maximum message history size (0 means no limit)",
             "manual_prompting": "Full manual prompting",
             "parallel_tool_calls": "Parallel tool calling"
           },
@@ -50,9 +48,7 @@
             "strip_emojis": "Strip emojis from the response",
             "strip_emphasis": "Strip Markdown emphasis markers from the response",
             "strip_latex": "Strip LaTeX commands from the response",
-            "suggested_value": "Suggested value",
             "temperature": "Temperature",
-            "max_message_history": "Maximum message history size (0 means no limit)",
             "manual_prompting": "Full manual prompting",
             "parallel_tool_calls": "Parallel tool calling"
           },

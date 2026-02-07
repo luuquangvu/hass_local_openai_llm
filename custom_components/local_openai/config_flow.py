@@ -37,7 +37,6 @@ from openai import AsyncOpenAI, OpenAIError
 from .const import (
     CONF_BASE_URL,
     CONF_MANUAL_PROMPTING,
-    CONF_MAX_MESSAGE_HISTORY,
     CONF_PARALLEL_TOOL_CALLS,
     CONF_SERVER_NAME,
     CONF_STRIP_EMOJIS,
@@ -218,17 +217,6 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                 ): NumberSelector(
                     NumberSelectorConfig(
                         min=0, max=1, step=0.05, mode=NumberSelectorMode.SLIDER
-                    )
-                ),
-                vol.Optional(
-                    CONF_MAX_MESSAGE_HISTORY,
-                    default=options.get(CONF_MAX_MESSAGE_HISTORY, 0),
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0,
-                        max=50,
-                        step=1,
-                        mode=NumberSelectorMode.SLIDER,
                     )
                 ),
             }

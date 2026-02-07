@@ -1,63 +1,63 @@
-# Local OpenAI LLM _(Home Assistant custom integration)_
+**[🇻🇳 Tiếng Việt](README.vi.md)**
 
-This repository tracks the upstream [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) project by [@skye-harris](https://github.com/skye-harris). All core capabilities are kept in sync, while this fork layers in a streamlined path for running Google's Gemini models via [Gemini-FastAPI](https://github.com/Nativu5/Gemini-FastAPI).
+# Local OpenAI LLM for Home Assistant
+
+This repository is a specialized fork of the original [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) project by [@skye-harris](https://github.com/skye-harris). It maintains core capabilities while adding powerful enhancements specifically designed for running Google's Gemini models for free via [Gemini-FastAPI](https://github.com/luuquangvu/ha-addons).
 
 ---
 
-## Highlights
+## Key Features
 
-### Upstream feature parity
-
-- OpenAI-compatible endpoint support with streamed responses, conversation history trimming, and manual prompt control.
-- Works with Home Assistant Assist features including tool calling, image inputs for AI tasks, temperature tuning, and emoji stripping.
-- Conversation agents retain TTS streaming and reconfiguration options from the original integration.
-
-### Gemini-FastAPI enhancements
-
-- Treat Gemini-FastAPI as a drop-in OpenAI API, exposing Google Gemini models to Home Assistant without a Google API key.
-- Send multimodal prompts (text, files, images, audio, video, PDF) and receive Gemini-generated text replies.
-- Request image generation through the same integration for richer automations.
-- Optional Markdown emphasis cleanup to improve announcement-quality responses.
+- **Extended Context Awareness**: Optimized to fully leverage the model's long-context capabilities and maximize context-caching efficiency, ensuring the agent maintains consistent memory throughout long-running conversations.
+- **Multimodal Mastery**: Seamlessly send text, images, audio, video, and PDF files directly to Google Gemini for advanced analysis and reasoning.
+- **Completely Free & No API Key**: Access powerful Google Gemini models for free as a drop-in OpenAI replacement. No Google Cloud project or official API key required (powered by [Gemini-FastAPI](https://github.com/luuquangvu/ha-addons)).
+- **Native Home Assistant Integration**: Deeply integrated with Assist, supporting tool calling (intent handling), image inputs for AI tasks, and temperature tuning.
+- **Manual Prompt Control**: Take full control of system instructions with Jinja2 template support for precise response shaping and personality.
+- **Image Generation**: Integrated support for generating images directly through the conversation agent or dedicated services.
+- **Announcement-Ready Output**: Built-in emoji stripping, Markdown emphasis cleanup, and LaTeX removal to ensure clear, high-quality TTS announcements.
 
 ---
 
 ## Prerequisites
 
-- A working Home Assistant installation with [HACS](https://hacs.xyz/) available for custom integrations.
-- An OpenAI-compatible endpoint: Gemini-FastAPI (proxying Google Gemini through cookies) or any backend supported upstream.
-- For Gemini-FastAPI, a Google account with Gemini web access and extracted `__Secure-1PSID` and `__Secure-1PSIDTS` cookie values.
+- **Home Assistant** with [HACS](https://hacs.xyz/) installed.
+- **Gemini-FastAPI Server**: [Available here](https://github.com/luuquangvu/ha-addons) (recommended for seamless Gemini access).
+- **Gemini Credentials**: Valid `__Secure-1PSID` and `__Secure-1PSIDTS` cookies (required by your Gemini-FastAPI instance).
 
 ---
 
 ## Installation
 
-### Option 1 - HACS (recommended)
+### Option 1: HACS (Recommended)
 
 [![Add Local OpenAI LLM to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=luuquangvu&repository=hass_local_openai_llm&category=integration)
 
-1. Open HACS and choose `Integrations`.
-2. Search for **Local OpenAI LLM**. If it is not listed, add `https://github.com/luuquangvu/hass_local_openai_llm` as a custom repository of type `Integration`, then refresh the list.
-3. Install the integration and restart Home Assistant when prompted.
+1. Open **HACS** and select **Integrations**.
+2. Search for **Local OpenAI LLM**.
+3. If not found, add `https://github.com/luuquangvu/hass_local_openai_llm` as a **Custom Repository** (Category: Integration).
+4. Click **Download**, then restart Home Assistant.
 
-### Option 2 - Manual copy
+### Option 2: Manual Installation
 
-1. Download the latest release archive from this repository.
-2. Copy the `custom_components/local_openai_llm` folder into the `custom_components` directory in your Home Assistant configuration.
+1. Download this repository as a ZIP file or clone it using Git.
+2. Copy the `custom_components/local_openai` directory into your Home Assistant's `custom_components/` folder.
 3. Restart Home Assistant.
 
 ---
 
 ## Configuration
 
-1. Navigate to `Settings` → `Devices & Services` in Home Assistant.
-2. Click `Add Integration` and search for **Local OpenAI LLM**.
-3. Enter the connection details for your local LLM endpoint, including the Server URL, and optionally the API key and Server Name.
-   - Server URL: http://host:port/v1 (for example, http://127.0.0.1:8000/v1)
-4. Complete the setup wizard to expose the conversation and image generation services.
+1. Go to **Settings** → **Devices & Services**.
+2. Click **Add Integration** and search for **Local OpenAI LLM**.
+3. Provide your server details:
+   - **Server Name**: A friendly name (e.g., `Gemini AI`).
+   - **Server URL**: The full endpoint (e.g., `http://127.0.0.1:8000/v1`). **Note:** Must include the `/v1` suffix.
+   - **API Key**: Optional (use the API key if configured in your Gemini-FastAPI `config.yaml`).
+4. Follow the setup wizard to create **Conversation Agents** or **AI Tasks**.
 
 ---
 
 ## Acknowledgements
 
-- Built on top of the excellent [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) project by [@skye-harris](https://github.com/skye-harris); this fork mirrors upstream improvements and releases.
-- Extra thanks to the [Gemini-FastAPI](https://github.com/Nativu5/Gemini-FastAPI) community for providing an accessible FastAPI wrapper around Gemini services.
+- Based on the excellent [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) project by [@skye-harris](https://github.com/skye-harris).
+- Powered by [Gemini-API](https://github.com/HanaokaYuzu/Gemini-API) & [Gemini-FastAPI](https://github.com/luuquangvu/ha-addons).
