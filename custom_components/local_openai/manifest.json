@@ -9,11 +9,13 @@
   "integration_type": "service",
   "iot_class": "local_polling",
   "requirements": [
-    "openai",
     "demoji",
-    "webcolors",
+    "openai",
+    "orjson",
     "pylatexenc",
-    "orjson"
+    "voluptuous",
+    "voluptuous-openapi",
+    "webcolors"
   ],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
