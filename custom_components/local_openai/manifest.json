@@ -9,11 +9,11 @@
   "integration_type": "service",
   "iot_class": "local_polling",
   "requirements": [
-    "openai>=2.15.0",
-    "demoji>=1.1.0",
-    "webcolors>=25.10.0",
-    "pylatexenc>=2.10",
-    "orjson>=3.11.5"
+    "openai",
+    "demoji",
+    "webcolors",
+    "pylatexenc",
+    "orjson"
   ],
   "version": "1.0.0"
 }
