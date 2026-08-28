@@ -10,7 +10,7 @@ from homeassistant.helpers import llm
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import LocalAiConfigEntry
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, LocalAiSubentryType
 from .entity import LocalAiEntity
 
 
@@ -21,7 +21,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up conversation entities."""
     for subentry_id, subentry in config_entry.subentries.items():
-        if subentry.subentry_type != "conversation":
+        if subentry.subentry_type != LocalAiSubentryType.CONVERSATION:
             continue
         async_add_entities(
             [LocalAiConversationEntity(config_entry, subentry)],

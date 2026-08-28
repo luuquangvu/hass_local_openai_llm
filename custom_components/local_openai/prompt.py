@@ -1,8 +1,12 @@
-from typing import Any
+"""Prompt building and formatting utilities for Local OpenAI LLM."""
+
+from __future__ import annotations
 
 import webcolors
+from homeassistant.components import conversation
 from homeassistant.components.conversation.const import DOMAIN as CONVERSATION_DOMAIN
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     area_registry as ar,
 )
@@ -39,10 +43,8 @@ DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE = [
 CSS3_NAME_TO_RGB = {name: webcolors.name_to_rgb(name, CSS3) for name in webcolors.names(CSS3)}
 
 
-def closest_color(requested_color):
-    """
-    Lovingly borrowed from https://github.com/acon96/home-llm.
-    """
+def closest_color(requested_color: tuple[int, int, int]) -> str:
+    """Find the closest CSS3 color name for an RGB tuple."""
     min_colors = {}
 
     for name, rgb in CSS3_NAME_TO_RGB.items():
@@ -54,15 +56,12 @@ def closest_color(requested_color):
     return min_colors[min(min_colors.keys())]
 
 
-def get_entities(hass) -> list:
-    """
-    Gather exposed entities and their states.
-    Lovingly borrowed from https://github.com/acon96/home-llm (_generate_system_prompt).
-    """
+def get_entities(hass: HomeAssistant) -> list[dict[str, object]]:
+    """Gather exposed entities and their formatted states."""
     extra_attributes_to_expose = DEFAULT_EXTRA_ATTRIBUTES_TO_EXPOSE
 
-    def expose_attributes(_attributes) -> list[str]:
-        result = []
+    def expose_attributes(_attributes: dict[str, object]) -> list[str]:
+        result: list[str] = []
         for attribute_name in extra_attributes_to_expose:
             if attribute_name not in _attributes:
                 continue
@@ -72,16 +71,21 @@ def get_entities(hass) -> list:
                 unit_suffix = _attributes.get(f"{attribute_name}_unit")
                 if unit_suffix:
                     value = f"{value} {unit_suffix}"
-                elif attribute_name == "temperature":
-                    suffix = _attributes.get("unit_of_measurement")
-                    if not suffix:
-                        suffix = "°F" if value > 50 else "°C"
+                elif attribute_name == "temperature" and isinstance(value, int | float):
+                    suffix = _attributes.get("unit_of_measurement") or (
+                        "°F" if value > 50 else "°C"
+                    )
                     value = f"{int(value)} {suffix}"
-                elif attribute_name == "rgb_color":
-                    value = f"{closest_color(value)} {value}"
-                elif attribute_name == "volume_level":
+                elif (
+                    attribute_name == "rgb_color"
+                    and isinstance(value, tuple | list)
+                    and len(value) == 3
+                ):
+                    color_tuple = (int(value[0]), int(value[1]), int(value[2]))
+                    value = f"{closest_color(color_tuple)} {value}"
+                elif attribute_name == "volume_level" and isinstance(value, int | float):
                     value = f"vol={int(value * 100)}"
-                elif attribute_name == "brightness":
+                elif attribute_name == "brightness" and isinstance(value, int | float):
                     value = f"{int(value / 255 * 100)}%"
                 elif attribute_name == "humidity":
                     value = f"{value}%"
@@ -90,18 +94,13 @@ def get_entities(hass) -> list:
         return result
 
     entities_to_expose, _domains = get_exposed_entities(hass)
-    devices = []
-    formatted_devices = ""
+    devices: list[dict[str, object]] = []
 
     for name, attributes in entities_to_expose.items():
-        state = attributes["state"]
+        state = str(attributes["state"])
         exposed_attributes = expose_attributes(attributes)
-        str_attributes = ";".join([state, *exposed_attributes])
 
-        formatted_devices = (
-            formatted_devices + f"{name} '{attributes.get('friendly_name')}' = {str_attributes}\n"
-        )
-        device_attribs = {
+        device_attribs: dict[str, object] = {
             "entity_id": name,
             "name": attributes.get("friendly_name"),
             "state": state,
@@ -119,13 +118,9 @@ def get_entities(hass) -> list:
     return devices
 
 
-def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    """
-    Gather exposed entity states.
-
-    Lovingly borrowed from https://github.com/acon96/home-llm.
-    """
-    entity_states = {}
+def get_exposed_entities(hass: HomeAssistant) -> tuple[dict[str, dict[str, object]], list[str]]:
+    """Gather exposed Home Assistant entities and their domain states."""
+    entity_states: dict[str, dict[str, object]] = {}
     domains = set()
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
@@ -140,7 +135,7 @@ def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
         if entity and entity.device_id:
             device = device_registry.async_get(entity.device_id)
 
-        attributes = dict(state.attributes)
+        attributes: dict[str, object] = dict(state.attributes)
         attributes["state"] = state.state
 
         if entity:
@@ -148,7 +143,7 @@ def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
                 attributes["aliases"] = entity.aliases
 
             if entity.unit_of_measurement:
-                attributes["state"] = attributes["state"] + " " + entity.unit_of_measurement
+                attributes["state"] = f"{attributes['state']} {entity.unit_of_measurement}"
 
         area_id = None
         if device and device.area_id:
@@ -156,11 +151,9 @@ def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
         if entity and entity.area_id:
             area_id = entity.area_id
 
-        if area_id:
-            area = area_registry.async_get_area(area_id)
-            if area:
-                attributes["area_id"] = area.id
-                attributes["area_name"] = area.name
+        if area_id and (area := area_registry.async_get_area(area_id)):
+            attributes["area_id"] = area.id
+            attributes["area_name"] = area.name
 
         entity_states[state.entity_id] = attributes
         domains.add(state.domain)
@@ -168,7 +161,13 @@ def get_exposed_entities(hass) -> tuple[dict[str, dict[str, Any]], list[str]]:
     return entity_states, list(domains)
 
 
-def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
+def format_custom_prompt(
+    hass: HomeAssistant,
+    agent_prompt: str,
+    user_input: conversation.ConversationInput,
+    tools: object = None,
+) -> str:
+    """Format and render custom prompt template with exposed devices and context."""
     devices = get_entities(hass)
     LOGGER.debug("Exposed devices for prompt: %s", devices)
 
@@ -177,14 +176,13 @@ def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
     device_name = None
     if user_input.device_id:
         device_reg = dr.async_get(hass)
-        device = device_reg.async_get(user_input.device_id)
-
-        if device:
+        if device := device_reg.async_get(user_input.device_id):
             device_name = device.name
             area_reg = ar.async_get(hass)
-            if device.area_id and (area := area_reg.async_get_area(device.area_id)):
-                floor_reg = fr.async_get(hass)
+            if device.area_id and (found_area := area_reg.async_get_area(device.area_id)):
+                area = found_area
                 if area.floor_id:
+                    floor_reg = fr.async_get(hass)
                     floor = floor_reg.async_get_floor(area.floor_id)
 
     LOGGER.debug(
@@ -209,4 +207,4 @@ def format_custom_prompt(hass, agent_prompt: str, user_input, tools):
         parse_result=False,
     )
     LOGGER.debug("Final rendered manual prompt: %s", rendered_prompt)
-    return rendered_prompt
+    return str(rendered_prompt)

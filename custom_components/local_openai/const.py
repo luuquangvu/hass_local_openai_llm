@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Literal
+from enum import StrEnum
 
 from homeassistant.const import CONF_LLM_HASS_API, CONF_PROMPT
 from homeassistant.helpers import llm
@@ -10,44 +10,65 @@ from homeassistant.helpers import llm
 DOMAIN = "local_openai"
 LOGGER = logging.getLogger(__package__)
 
-CONF_RECOMMENDED = "recommended"
-CONF_BASE_URL = "base_url"
-CONF_SERVER_NAME = "server_name"
-CONF_STRIP_EMOJIS = "strip_emojis"
-CONF_STRIP_EMPHASIS = "strip_emphasis"
-CONF_STRIP_LATEX = "strip_latex"
-CONF_MANUAL_PROMPTING = "manual_prompting"
-CONF_TEMPERATURE = "temperature"
-CONF_PARALLEL_TOOL_CALLS = "parallel_tool_calls"
-CONF_GENERATE_DATA = "generate_data"
-CONF_GENERATE_IMAGE = "generate_image"
-CONF_SUPPORT_ATTACHMENTS = "support_attachments"
+
+class LocalAiConfigKey:
+    """Configuration keys for Local OpenAI LLM."""
+
+    BASE_URL = "base_url"
+    GENERATE_DATA = "generate_data"
+    GENERATE_IMAGE = "generate_image"
+    MANUAL_PROMPTING = "manual_prompting"
+    PARALLEL_TOOL_CALLS = "parallel_tool_calls"
+    RECOMMENDED = "recommended"
+    SERVER_NAME = "server_name"
+    STRIP_EMOJIS = "strip_emojis"
+    STRIP_EMPHASIS = "strip_emphasis"
+    STRIP_LATEX = "strip_latex"
+    SUPPORT_ATTACHMENTS = "support_attachments"
+    TEMPERATURE = "temperature"
+
+
+class LocalAiSubentryType(StrEnum):
+    """Subentry types supported by Local OpenAI LLM."""
+
+    AI_TASK_DATA = "ai_task_data"
+    CONVERSATION = "conversation"
+
+
+class AudioFormat(StrEnum):
+    """Supported audio formats for Local OpenAI LLM."""
+
+    MP3 = "mp3"
+    WAV = "wav"
+
 
 RECOMMENDED_CONVERSATION_OPTIONS = {
-    CONF_RECOMMENDED: True,
+    LocalAiConfigKey.RECOMMENDED: True,
     CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
     CONF_PROMPT: llm.DEFAULT_INSTRUCTIONS_PROMPT,
 }
 
 MAX_TOOL_ITERATIONS = 10
 
-AUDIO_MIME_TYPE_MAP: dict[str, Literal["mp3", "wav"]] = {
-    "audio/mpeg": "mp3",
-    "audio/mp3": "mp3",
-    "audio/mpeg3": "mp3",
-    "audio/x-mpeg-3": "mp3",
-    "audio/x-mp3": "mp3",
-    "audio/wav": "wav",
-    "audio/x-wav": "wav",
-    "audio/vnd.wave": "wav",
+AUDIO_MIME_TYPE_MAP: dict[str, AudioFormat] = {
+    "audio/mpeg": AudioFormat.MP3,
+    "audio/mp3": AudioFormat.MP3,
+    "audio/mpeg3": AudioFormat.MP3,
+    "audio/x-mpeg-3": AudioFormat.MP3,
+    "audio/x-mp3": AudioFormat.MP3,
+    "audio/wav": AudioFormat.WAV,
+    "audio/x-wav": AudioFormat.WAV,
+    "audio/vnd.wave": AudioFormat.WAV,
 }
+
+CURRENCY_PATTERN = re.compile(r"\$\d+(?:\.\d+)?(?:\s|[,\.;:!\?]|\Z)")
 
 LATEX_MATH_SPAN = re.compile(
     r"""
     \$\$[\s\S]+?\$\$
-  | \$(?!\s)[^$\n]+?(?<!\s)\$
-  | \\\([^)]*\\\)
-  | \\\[[^]]*\\]
+  | \$(?!\s)(?:\\.|[^\$\n\\])+?(?<!\s)\$
+  | \\\([\s\S]*?\\\)
+  | \\\[[\s\S]*?\\\]
     """,
     re.VERBOSE,
 )

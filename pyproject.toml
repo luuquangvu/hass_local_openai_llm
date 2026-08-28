@@ -1,22 +1,20 @@
 [project]
 name = "local_openai"
-version = "1.1.0"
+version = "1.2.0"
 description = "Home Assistant integration for the Gemini-FastAPI and any OpenAI-compatible services"
 readme = "README.md"
 requires-python = ">=3.14.2"
-dependencies = []
+dependencies = ["demoji", "openai<3", "pylatexenc", "webcolors"]
 
 [dependency-groups]
 dev = [
-  "homeassistant>=2026.4.0",
-  "demoji",
-  "openai",
-  "pylatexenc",
-  "webcolors",
+  "homeassistant>=2026.8.0",
+  "interrogate",
+  "orjson",
+  "prek",
+  "pyright",
   "ruff",
   "ty",
-  "pytest",
-  "pytest-asyncio",
 ]
 
 [project.urls]
@@ -28,18 +26,37 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = [
-  "E",   # pycodestyle errors
-  "F",   # pyflakes
-  "W",   # pycodestyle warnings
-  "I",   # isort
-  "UP",  # pyupgrade
   "B",   # flake8-bugbear
   "C4",  # flake8-comprehensions
-  "SIM", # flake8-simplify
+  "D",   # pydocstyle
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "G",   # flake8-logging-format
+  "I",   # isort
+  "LOG", # flake8-logging
+  "N",   # pep8-naming
+  "PIE", # flake8-pie
+  "PT",  # flake8-pytest-style
+  "RET", # flake8-return
   "RUF", # ruff-specific rules
+  "SIM", # flake8-simplify
   "TID", # flake8-tidy-imports
+  "UP",  # pyupgrade
+  "W",   # pycodestyle warnings
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pyright]
+typeCheckingMode = "standard"
+reportUnreachable = "warning"
+
+[tool.interrogate]
+fail-under = 100
+ignore-nested-functions = true
+exclude = ["scratch"]

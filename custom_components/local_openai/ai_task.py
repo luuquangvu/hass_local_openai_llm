@@ -7,6 +7,7 @@ import binascii
 
 import orjson
 from homeassistant.components import ai_task, conversation
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -14,10 +15,9 @@ from openai.types.responses.response_output_item import ImageGenerationCall
 
 from . import LocalAiConfigEntry
 from .const import (
-    CONF_GENERATE_DATA,
-    CONF_GENERATE_IMAGE,
-    CONF_SUPPORT_ATTACHMENTS,
     LOGGER,
+    LocalAiConfigKey,
+    LocalAiSubentryType,
 )
 from .entity import LocalAiEntity
 
@@ -29,7 +29,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up AI Task entities."""
     for subentry in config_entry.subentries.values():
-        if subentry.subentry_type != "ai_task_data":
+        if subentry.subentry_type != LocalAiSubentryType.AI_TASK_DATA:
             continue
 
         async_add_entities(
@@ -39,24 +39,24 @@ async def async_setup_entry(
 
 
 class LocalAITaskEntity(
-    ai_task.AITaskEntity,
     LocalAiEntity,
+    ai_task.AITaskEntity,
 ):
     """Local OpenAI LLM AI Task entity."""
 
     _attr_name = None
 
-    def __init__(self, entry: LocalAiConfigEntry, subentry) -> None:
+    def __init__(self, entry: LocalAiConfigEntry, subentry: ConfigSubentry) -> None:
         """Initialize the AI Task entity."""
         ai_task.AITaskEntity.__init__(self)
         LocalAiEntity.__init__(self, entry, subentry)
 
-        features = 0
-        if subentry.data.get(CONF_SUPPORT_ATTACHMENTS, True):
+        features = ai_task.AITaskEntityFeature(0)
+        if subentry.data.get(LocalAiConfigKey.SUPPORT_ATTACHMENTS, True):
             features |= ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
-        if subentry.data.get(CONF_GENERATE_DATA, True):
+        if subentry.data.get(LocalAiConfigKey.GENERATE_DATA, True):
             features |= ai_task.AITaskEntityFeature.GENERATE_DATA
-        if subentry.data.get(CONF_GENERATE_IMAGE, True):
+        if subentry.data.get(LocalAiConfigKey.GENERATE_IMAGE, True):
             features |= ai_task.AITaskEntityFeature.GENERATE_IMAGE
         self._attr_supported_features = features
 

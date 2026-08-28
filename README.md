@@ -1,6 +1,6 @@
 # Local OpenAI LLM for Home Assistant
 
-**[ 🇺🇸 English | [🇻🇳 Tiếng Việt](README.vi.md) ]**
+**🇺🇸 English | [🇻🇳 Tiếng Việt](README.vi.md)**
 
 This repository is a specialized fork of the original [Local OpenAI LLM](https://github.com/skye-harris/hass_local_openai_llm) project by [@skye-harris](https://github.com/skye-harris). It maintains core capabilities while adding powerful enhancements specifically designed for running Google's Gemini models for free via [Gemini-FastAPI](https://github.com/luuquangvu/ha-addons).
 

@@ -8,7 +8,7 @@ import mimetypes
 import re
 import unicodedata
 from collections.abc import AsyncGenerator, Callable
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Literal
 
 import demoji
 import openai
@@ -28,6 +28,7 @@ from openai.types.chat import (
     ChatCompletionContentPartImageParam,
     ChatCompletionContentPartInputAudioParam,
     ChatCompletionContentPartParam,
+    ChatCompletionContentPartRefusalParam,
     ChatCompletionContentPartTextParam,
     ChatCompletionFunctionToolParam,
     ChatCompletionMessageFunctionToolCallParam,
@@ -36,8 +37,20 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam,
     ChatCompletionUserMessageParam,
 )
+from openai.types.chat.chat_completion_content_part_param import File, FileFile
 from openai.types.chat.chat_completion_message_function_tool_call_param import Function
+from openai.types.responses import (
+    EasyInputMessageParam,
+    ResponseFunctionToolCallParam,
+    ResponseInputContentParam,
+    ResponseInputImageParam,
+    ResponseInputItemParam,
+    ResponseInputTextParam,
+    ToolChoiceTypesParam,
+)
+from openai.types.responses.response_input_item_param import FunctionCallOutput
 from openai.types.responses.response_output_item import ImageGenerationCall
+from openai.types.responses.tool_param import ImageGeneration
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
 from pylatexenc.latex2text import LatexNodes2Text
@@ -45,19 +58,21 @@ from voluptuous_openapi import convert
 
 from . import LocalAiConfigEntry
 from .const import (
-    CONF_MANUAL_PROMPTING,
-    CONF_PARALLEL_TOOL_CALLS,
-    CONF_STRIP_EMOJIS,
-    CONF_STRIP_EMPHASIS,
-    CONF_STRIP_LATEX,
-    CONF_TEMPERATURE,
+    CURRENCY_PATTERN,
     DOMAIN,
     GEMINI_MIME_TYPES_SUPPORTED,
     LATEX_MATH_SPAN,
     LOGGER,
     MAX_TOOL_ITERATIONS,
+    LocalAiConfigKey,
 )
 from .prompt import format_custom_prompt
+
+
+class AssistantMessageWithReasoning(ChatCompletionAssistantMessageParam, total=False):
+    """Chat completion assistant message parameter with reasoning content."""
+
+    reasoning_content: str
 
 
 async def _strip_emojis(text: str) -> str:
@@ -67,11 +82,12 @@ async def _strip_emojis(text: str) -> str:
 
 
 def _sync_latex_to_text(text: str) -> str:
-    """Synchronous helper to convert LaTeX to text."""
+    """Synchronous helper to convert LaTeX math spans to text."""
+    converter = LatexNodes2Text(keep_comments=True, keep_braced_groups=True)
 
-    def replace(match):
+    def replace(match: re.Match[str]) -> str:
         span = match.group(0)
-        return LatexNodes2Text(keep_comments=True, keep_braced_groups=True).latex_to_text(span)
+        return converter.latex_to_text(span)
 
     return LATEX_MATH_SPAN.sub(replace, text)
 
@@ -87,81 +103,129 @@ def _is_punctuation(char: str) -> bool:
     return bool(char) and unicodedata.category(char).startswith("P")
 
 
+def _is_word_character(char: str) -> bool:
+    """Return True if the character can be part of a word."""
+    return bool(char) and (char.isalnum() or char == "_")
+
+
 def _should_strip_emphasis(inner: str, previous: str, following: str) -> bool:
     """Return True if the emphasis markers should be removed."""
     trimmed = inner.strip()
     if not trimmed:
-        return True
+        return False
 
-    if inner == trimmed:
-        return True
+    if inner != trimmed:
+        leading_ws = inner[: len(inner) - len(inner.lstrip())]
+        trailing_ws = inner[len(inner.rstrip()) :]
+        if leading_ws or trailing_ws:
+            return False
 
-    leading_ws = inner[: len(inner) - len(inner.lstrip())]
-    trailing_ws = inner[len(inner.rstrip()) :]
-
-    if (
-        trailing_ws
-        and not leading_ws
-        and trailing_ws.strip() == ""
-        and (_is_punctuation(following) or following.isspace() or not following)
-    ):
-        return True
-
-    return bool(
-        leading_ws
-        and not trailing_ws
-        and leading_ws.strip() == ""
-        and (_is_punctuation(previous) or previous.isspace() or not previous)
-    )
+    return True
 
 
-def _process_emphasis_block_content(buffer: str, start: int, flush: bool) -> tuple[str, int] | None:
-    """Processes an emphasis block, returns content and new index."""
-    end = buffer.find("**", start + 2)
-    if end == -1:
-        if flush:
-            return buffer[start:], len(buffer)
-        return None
+def _sync_strip_emphasis_markers(text: str) -> str:
+    """Synchronous helper to strip markdown emphasis markers."""
+    length = len(text)
+    out: list[str] = []
+    i = 0
 
-    inner = buffer[start + 2 : end]
-    prev_char = buffer[start - 1] if start > 0 else ""
-    length = len(buffer)
-    next_index = end + 2
-    next_char = buffer[next_index] if next_index < length else ""
-    if _should_strip_emphasis(inner, prev_char, next_char):
-        processed_inner = inner
-        return processed_inner, end + 2
-    return buffer[start : end + 2], end + 2
+    while i < length:
+        ch = text[i]
+        if ch in ("*", "_"):
+            marker = ch
+            marker_len = 1
+            if i + 1 < length and text[i + 1] == marker:
+                marker_len = 2
+
+            start = i
+            idx = i + marker_len
+            prev_char = text[start - 1] if start > 0 else ""
+            char_after_open = text[idx] if idx < length else ""
+
+            if not char_after_open or char_after_open.isspace():
+                out.append(text[start:idx])
+                i = idx
+                continue
+
+            if marker == "_" and _is_word_character(prev_char):
+                out.append(text[start:idx])
+                i = idx
+                continue
+
+            search_marker = marker * marker_len
+            closing_idx = text.find(search_marker, idx)
+            if closing_idx != -1:
+                inner = text[idx:closing_idx]
+                char_before_close = text[closing_idx - 1] if closing_idx > idx else ""
+                follow_idx = closing_idx + marker_len
+                following_char = text[follow_idx] if follow_idx < length else ""
+
+                if (
+                    not char_before_close.isspace()
+                    and not (marker == "_" and _is_word_character(following_char))
+                    and _should_strip_emphasis(inner, prev_char, following_char)
+                ):
+                    out.append(inner)
+                    i = follow_idx
+                    continue
+
+                out.append(text[start:idx])
+                i = idx
+                continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
 
 
 def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
-    """Strip emphasis markers from the buffer and return remaining text."""
-    output_parts: list[str] = []
-    idx = 0
-    length = len(buffer)
+    """Strip emphasis markers from buffer and return (ready_text, pending_buffer)."""
+    if flush or not buffer:
+        return _sync_strip_emphasis_markers(buffer), ""
 
-    while idx < length:
-        next_emphasis = buffer.find("**", idx)
+    for marker in ("**", "__"):
+        if buffer.count(marker) % 2 != 0:
+            last_idx = buffer.rfind(marker)
+            return _sync_strip_emphasis_markers(buffer[:last_idx]), buffer[last_idx:]
 
-        if next_emphasis == -1:
-            output_parts.append(buffer[idx:])
-            break
+    for marker, double_marker in (("*", "**"), ("_", "__")):
+        single_count = buffer.count(marker) - 2 * buffer.count(double_marker)
+        if single_count % 2 != 0:
+            last_idx = buffer.rfind(marker)
+            return _sync_strip_emphasis_markers(buffer[:last_idx]), buffer[last_idx:]
 
-        output_parts.append(buffer[idx:next_emphasis])
+    return _sync_strip_emphasis_markers(buffer), ""
 
-        processed = _process_emphasis_block_content(buffer, next_emphasis, flush)
-        if processed is None:
-            return "".join(output_parts), buffer[next_emphasis:]
-        content, new_idx = processed
-        output_parts.append(content)
-        idx = new_idx
 
-    return "".join(output_parts), ""
+async def _strip_emphasis_markers(text: str) -> str:
+    """Strip emphasis markers from text asynchronously."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _sync_strip_emphasis_markers, text)
+
+
+def _consume_dollar_latex(buffer: str) -> tuple[str, str] | None:
+    """Check for an unclosed single dollar LaTeX delimiter."""
+    if buffer.count("$") % 2 == 0:
+        return None
+
+    last_dollar_idx = buffer.rfind("$")
+    following_text = buffer[last_dollar_idx:]
+    if CURRENCY_PATTERN.match(following_text):
+        return buffer, ""
+
+    if following_no_dollar := buffer[last_dollar_idx + 1 :]:
+        return (
+            (buffer, "")
+            if following_no_dollar[0].isspace()
+            else (buffer[:last_dollar_idx], buffer[last_dollar_idx:])
+        )
+    return buffer[:last_dollar_idx], buffer[last_dollar_idx:]
 
 
 def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
-    """
-    Check the buffer for incomplete LaTeX patterns.
+    """Check the buffer for incomplete LaTeX patterns.
+
     Returns (safe_to_process, keep_in_buffer).
     """
     if flush or not buffer:
@@ -171,20 +235,10 @@ def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
         last_double = buffer.rfind("$$")
         return buffer[:last_double], buffer[last_double:]
 
-    if buffer.count("$") % 2 != 0:
-        last_dollar_idx = buffer.rfind("$")
-        following_text = buffer[last_dollar_idx + 1 :]
-        if not following_text:
-            return buffer[:last_dollar_idx], buffer[last_dollar_idx:]
+    if (result := _consume_dollar_latex(buffer)) is not None:
+        return result
 
-        first_char = following_text[0]
-        if first_char.isspace():
-            return buffer, ""
-
-        return buffer[:last_dollar_idx], buffer[last_dollar_idx:]
-
-    match = re.search(r"(\\[a-zA-Z]*)$", buffer)
-    if match:
+    if match := re.search(r"(\\[a-zA-Z]*)$", buffer):
         start_index = match.start(1)
         return buffer[:start_index], buffer[start_index:]
 
@@ -193,7 +247,7 @@ def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
         tail = buffer[last_backslash:]
         if tail.count("{") > tail.count("}"):
             return buffer[:last_backslash], buffer[last_backslash:]
-        if tail == "\\" or tail == "\\[" or tail == "\\(":
+        if tail in ("\\", "\\[", "\\("):
             return buffer[:last_backslash], buffer[last_backslash:]
 
     return buffer, ""
@@ -201,37 +255,38 @@ def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
 
 def _attachment_supported(mime_type: str) -> bool:
     """Validate whether the attachment MIME type is supported for the active model."""
-    if not mime_type:
-        return False
-
-    return mime_type.lower() in GEMINI_MIME_TYPES_SUPPORTED
+    return mime_type.lower() in GEMINI_MIME_TYPES_SUPPORTED if mime_type else False
 
 
-def _adjust_schema(schema: dict[str, Any]) -> None:
+def _adjust_schema(schema: dict[str, object]) -> None:
     """Adjust the schema to be compatible with OpenRouter API."""
-    if schema["type"] == "object":
+    if schema.get("type") == "object":
         if "properties" not in schema:
             return
 
         if "required" not in schema:
             schema["required"] = []
 
-        for prop, prop_info in schema["properties"].items():
-            _adjust_schema(prop_info)
-            if prop not in schema["required"]:
-                prop_type = prop_info.get("type")
-                if isinstance(prop_type, list):
-                    if "null" not in prop_type:
-                        prop_type.append("null")
-                elif prop_type:
-                    prop_info["type"] = [prop_type, "null"]
-                schema["required"].append(prop)
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            required = schema.get("required")
+            if isinstance(required, list):
+                for prop, prop_info in properties.items():
+                    if isinstance(prop_info, dict):
+                        _adjust_schema(prop_info)
+                        if prop not in required:
+                            prop_type = prop_info.get("type")
+                            if isinstance(prop_type, list):
+                                if "null" not in prop_type:
+                                    prop_type.append("null")
+                            elif prop_type:
+                                prop_info["type"] = [prop_type, "null"]
+                            required.append(prop)
 
-    elif schema["type"] == "array":
-        if "items" not in schema:
-            return
-
-        _adjust_schema(schema["items"])
+    elif schema.get("type") == "array":
+        items = schema.get("items")
+        if isinstance(items, dict):
+            _adjust_schema(items)
 
 
 def _format_structured_output(
@@ -255,7 +310,7 @@ def _format_structured_output(
 
 def _format_tool(
     tool: llm.Tool,
-    custom_serializer: Callable[[Any], Any] | None,
+    custom_serializer: Callable[[object], object] | None,
 ) -> ChatCompletionFunctionToolParam:
     """Format tool specification."""
     tool_spec = FunctionDefinition(
@@ -271,97 +326,97 @@ def _format_tool(
 
 
 def _convert_completion_content_part_to_response_input(
-    part: ChatCompletionContentPartParam,
-) -> dict[str, Any]:
+    part: ChatCompletionContentPartParam | ChatCompletionContentPartRefusalParam,
+) -> ResponseInputContentParam:
     """Convert a chat completion content part into responses API format."""
     if part["type"] == "text":
-        return {"type": "input_text", "text": part["text"]}
+        return ResponseInputTextParam(type="input_text", text=part["text"])
     if part["type"] == "image_url":
-        image_entry: dict[str, Any] = {
-            "type": "input_image",
-            "image_url": part["image_url"]["url"],
-        }
+        image_url = part["image_url"]["url"]
         detail = part["image_url"].get("detail")
-        if detail:
-            image_entry["detail"] = detail
-        return image_entry
-    if part["type"] == "refusal":
-        return {"type": "input_text", "text": part["refusal"]}
-    return {"type": "input_text", "text": ""}
+        image_detail: Literal["auto", "low", "high", "original"] = (
+            detail if detail in ("auto", "low", "high", "original") else "auto"
+        )
+        return ResponseInputImageParam(
+            type="input_image",
+            image_url=image_url,
+            detail=image_detail,
+        )
+    return ResponseInputTextParam(type="input_text", text="")
 
 
 def _convert_completion_messages_to_response_input(
     messages: list[ChatCompletionMessageParam],
-) -> list[dict[str, Any]]:
+) -> list[ResponseInputItemParam]:
     """Convert chat completion style messages into responses API format."""
-    response_messages: list[dict[str, Any]] = []
+    response_messages: list[ResponseInputItemParam] = []
     for message in messages:
-        role = message["role"]
-        if role == "system":
-            msg = cast("ChatCompletionSystemMessageParam", message)
+        if message["role"] == "system":
+            raw_content = message.get("content") or ""
+            content_str = raw_content if isinstance(raw_content, str) else str(raw_content)
             response_messages.append(
-                {
-                    "type": "message",
-                    "role": "developer",
-                    "content": msg.get("content") or "",
-                }
+                EasyInputMessageParam(
+                    type="message",
+                    role="developer",
+                    content=content_str,
+                )
             )
             continue
 
-        if role == "user":
-            msg = cast("ChatCompletionUserMessageParam", message)
-            content = msg.get("content")
+        if message["role"] == "user":
+            content = message.get("content")
             if isinstance(content, list):
                 response_messages.append(
-                    {
-                        "type": "message",
-                        "role": "user",
-                        "content": [
+                    EasyInputMessageParam(
+                        type="message",
+                        role="user",
+                        content=[
                             _convert_completion_content_part_to_response_input(part)
                             for part in content
                         ],
-                    }
+                    )
                 )
             else:
                 response_messages.append(
-                    {
-                        "type": "message",
-                        "role": "user",
-                        "content": content or "",
-                    }
+                    EasyInputMessageParam(
+                        type="message",
+                        role="user",
+                        content=str(content) if content is not None else "",
+                    )
                 )
             continue
 
-        if role == "assistant":
-            msg = cast("ChatCompletionAssistantMessageParam", message)
+        if message["role"] == "assistant":
+            raw_content = message.get("content") or ""
+            content_str = raw_content if isinstance(raw_content, str) else str(raw_content)
             response_messages.append(
-                {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": msg.get("content") or "",
-                }
+                EasyInputMessageParam(
+                    type="message",
+                    role="assistant",
+                    content=content_str,
+                )
             )
-            tool_calls = msg.get("tool_calls")
-            if tool_calls:
+            if tool_calls := message.get("tool_calls"):
                 for tool_call in tool_calls:
-                    function = cast("dict[str, Any]", tool_call.get("function"))
-                    response_messages.append(
-                        {
-                            "type": "function_call",
-                            "name": function["name"],
-                            "arguments": function["arguments"],
-                            "call_id": tool_call["id"],
-                        }
-                    )
+                    if tool_call["type"] == "function":
+                        fn = tool_call["function"]
+                        response_messages.append(
+                            ResponseFunctionToolCallParam(
+                                type="function_call",
+                                name=fn["name"],
+                                arguments=fn["arguments"],
+                                call_id=tool_call["id"],
+                            )
+                        )
             continue
 
-        if role == "tool":
+        if message["role"] == "tool":
             response_messages.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": cast("ChatCompletionToolMessageParam", message)["tool_call_id"],
-                    "output": message.get("content") or "",
-                }
+                FunctionCallOutput(
+                    type="function_call_output",
+                    call_id=message["tool_call_id"],
+                    output=str(message.get("content") or ""),
+                )
             )
 
     return response_messages
@@ -372,20 +427,18 @@ def b64_file(file_path):
     return base64.b64encode(file_path.read_bytes()).decode("utf-8")
 
 
-def _stringify_keys(obj: Any) -> Any:
+def _stringify_keys(obj: object) -> object:
     """Recursively convert dictionary keys to strings."""
     if isinstance(obj, dict):
         return {str(k): _stringify_keys(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_stringify_keys(v) for v in obj]
-    return obj
+    return [_stringify_keys(v) for v in obj] if isinstance(obj, list) else obj
 
 
 async def _convert_content_to_chat_message(
-    content: conversation.Content,
-    model: str | None = None,
+    content: object,
+    model: str,
 ) -> ChatCompletionMessageParam | None:
-    """Convert any native chat message for this agent to the native format."""
+    """Convert any ChatLog content to ChatCompletion message format."""
     if isinstance(content, conversation.ToolResultContent):
         return ChatCompletionToolMessageParam(
             role="tool",
@@ -393,17 +446,17 @@ async def _convert_content_to_chat_message(
             content=orjson.dumps(_stringify_keys(content.tool_result)).decode("utf-8"),
         )
 
-    role: Literal["user", "assistant", "system"] = content.role
-    if role == "system" and content.content:
-        return ChatCompletionSystemMessageParam(role="system", content=str(content.content))
+    if isinstance(content, conversation.SystemContent):
+        return ChatCompletionSystemMessageParam(
+            role="system",
+            content=str(content.content) if content.content is not None else "",
+        )
 
-    if role == "user":
+    if isinstance(content, conversation.UserContent):
         content_parts: list[ChatCompletionContentPartParam] = []
-        attachments = getattr(content, "attachments", None) or ()
 
-        if attachments:
-            loop = asyncio.get_running_loop()
-            for attachment in attachments:
+        if content.attachments:
+            for attachment in content.attachments:
                 mime_type = (
                     attachment.mime_type
                     or mimetypes.guess_type(str(attachment.path))[0]
@@ -421,7 +474,9 @@ async def _convert_content_to_chat_message(
                         translation_key="unsupported_attachment_type",
                     )
 
-                base64_file = await loop.run_in_executor(None, b64_file, attachment.path)
+                base64_file = await asyncio.to_thread(b64_file, attachment.path)
+                if not base64_file:
+                    continue
 
                 if mime_type.startswith("image/"):
                     content_parts.append(
@@ -429,36 +484,31 @@ async def _convert_content_to_chat_message(
                             type="image_url",
                             image_url={
                                 "url": f"data:{mime_type};base64,{base64_file}",
-                                "detail": "auto",
                             },
                         )
                     )
                     continue
 
                 if mime_type.startswith("audio/"):
-                    audio_format = mimetypes.guess_extension(mime_type)
-                    if audio_format and audio_format in (".mp3", ".wav"):
-                        audio_format = audio_format.split(".")[-1]
+                    ext = mimetypes.guess_extension(mime_type)
+                    audio_fmt: Literal["wav", "mp3"] | None = None
+                    if ext in (".wav", ".mp3"):
+                        audio_fmt = "wav" if ext == ".wav" else "mp3"
+                    if audio_fmt is not None:
                         content_parts.append(
                             ChatCompletionContentPartInputAudioParam(
                                 type="input_audio",
-                                input_audio={"format": audio_format, "data": base64_file},
+                                input_audio={"format": audio_fmt, "data": base64_file},
                             )
                         )
                         continue
 
                 content_parts.append(
-                    cast(
-                        "ChatCompletionContentPartParam",
-                        cast(
-                            "object",
-                            {
-                                "type": "file",
-                                "file": {
-                                    "file_data": base64_file,
-                                    "filename": attachment.path.name,
-                                },
-                            },
+                    File(
+                        type="file",
+                        file=FileFile(
+                            file_data=base64_file,
+                            filename=attachment.path.name,
                         ),
                     )
                 )
@@ -472,15 +522,15 @@ async def _convert_content_to_chat_message(
             return ChatCompletionUserMessageParam(role="user", content=content_parts)
         return None
 
-    if role == "assistant":
-        param = ChatCompletionAssistantMessageParam(
+    if isinstance(content, conversation.AssistantContent):
+        param = AssistantMessageWithReasoning(
             role="assistant",
-            content=content.content,
+            content=str(content.content) if content.content is not None else "",
         )
         if (thinking := getattr(content, "thinking_content", None)) is not None:
-            cast(dict[str, Any], cast(object, param))["reasoning_content"] = thinking
+            param["reasoning_content"] = str(thinking)
 
-        if isinstance(content, conversation.AssistantContent) and content.tool_calls:
+        if content.tool_calls:
             param["tool_calls"] = [
                 ChatCompletionMessageFunctionToolCallParam(
                     type="function",
@@ -495,11 +545,11 @@ async def _convert_content_to_chat_message(
                 for tool_call in content.tool_calls
             ]
         return param
-    LOGGER.warning("Could not convert message to Completions API: %s", content)
+
     return None
 
 
-def _decode_tool_arguments(arguments: str) -> Any:
+def _decode_tool_arguments(arguments: str) -> object:
     """Decode tool call arguments."""
     try:
         return orjson.loads(arguments)
@@ -515,7 +565,6 @@ async def _transform_stream(
     strip_latex: bool,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """Transform a streaming OpenAI response to ChatLog format."""
-    new_msg = True
     pending_think = ""
     in_think = False
     seen_visible = False
@@ -535,12 +584,6 @@ async def _transform_stream(
         if (reasoning := getattr(delta, "reasoning_content", None)) is not None:
             chunk["thinking_content"] = reasoning
 
-        if new_msg:
-            chunk["role"] = cast("Literal['assistant']", delta.role)
-            new_msg = False
-            pending_emphasis = ""
-            pending_latex = ""
-
         if choice.finish_reason and pending_tool_calls:
             chunk["tool_calls"] = [
                 llm.ToolInput(
@@ -552,94 +595,95 @@ async def _transform_stream(
             ]
             pending_tool_calls = []
 
-        if (tool_calls := delta.tool_calls) is not None and tool_calls:
-            for tool_call in tool_calls:
-                index = tool_call.index or 0
+        if delta.tool_calls:
+            for tool_call in delta.tool_calls:
+                index = tool_call.index
                 while len(pending_tool_calls) <= index:
                     pending_tool_calls.append({"name": "", "args": ""})
+                if tool_call.function:
+                    if tool_call.function.name:
+                        pending_tool_calls[index]["name"] += tool_call.function.name
+                    if tool_call.function.arguments:
+                        pending_tool_calls[index]["args"] += tool_call.function.arguments
 
-                entry = pending_tool_calls[index]
-                if not entry["name"] and tool_call.function:
-                    entry["name"] = tool_call.function.name
+        if delta.content:
+            text = delta.content
+            if in_think:
+                if "</think>" in text:
+                    think_part, _, normal_part = text.partition("</think>")
+                    pending_think += think_part
+                    in_think = False
+                    chunk["thinking_content"] = pending_think
+                    pending_think = ""
+                    text = normal_part
+                else:
+                    pending_think += text
+                    continue
+            elif not seen_visible:
+                leading_ws = len(text) - len(text.lstrip())
+                stripped = text[leading_ws:]
 
-                if tool_call.function and tool_call.function.arguments:
-                    entry["args"] += tool_call.function.arguments
+                if stripped.startswith("<think>"):
+                    in_think = True
+                    after_tag = stripped[len("<think>") :]
+                    if "</think>" in after_tag:
+                        think_part, _, normal_part = after_tag.partition("</think>")
+                        chunk["thinking_content"] = think_part
+                        in_think = False
+                        text = normal_part
+                    else:
+                        pending_think = after_tag
+                        continue
+                elif not stripped:
+                    continue
+                else:
+                    seen_visible = True
+                    text = stripped
 
-        content_segments: list[str] = []
-
-        if (content := delta.content) is not None:
-            LOGGER.debug("Raw content from API stream: %s", content)
-            if strip_emojis:
-                content = await _strip_emojis(content)
+            if not text:
+                if chunk:
+                    yield chunk
+                continue
 
             if strip_latex:
-                pending_latex += content
-                content, pending_latex = _consume_latex(pending_latex, flush=False)
-                if content:
-                    content = await _latex_to_text(content)
+                text, pending_latex = _consume_latex(pending_latex + text, flush=False)
+                if not text:
+                    if chunk:
+                        yield chunk
+                    continue
+                text = await _latex_to_text(text)
 
-            if strip_emphasis and content:
-                pending_emphasis += content
-                content, pending_emphasis = _consume_emphasis(pending_emphasis, flush=False)
-            elif not strip_emphasis:
-                pending_emphasis = ""
-            elif not content:
-                pass
+            if strip_emojis:
+                text = await _strip_emojis(text)
 
-            LOGGER.debug("Content after filtering stream chunk: %s", content)
-            if content:
-                content_segments.append(content)
+            if strip_emphasis:
+                text, pending_emphasis = _consume_emphasis(pending_emphasis + text, flush=False)
+                if not text:
+                    if chunk:
+                        yield chunk
+                    continue
 
-        if choice.finish_reason:
-            if strip_latex and pending_latex:
-                flushed_latex, _ = _consume_latex(pending_latex, flush=True)
-                if flushed_latex:
-                    flushed_latex = await _latex_to_text(flushed_latex)
-                    if strip_emphasis:
-                        pending_emphasis += flushed_latex
-                    else:
-                        content_segments.append(flushed_latex)
+            if text:
+                chunk["content"] = text
 
-            if strip_emphasis and pending_emphasis:
-                flushed, pending_emphasis = _consume_emphasis(pending_emphasis, flush=True)
-                if flushed:
-                    content_segments.append(flushed)
-
-        visible_output = ""
-        for segment in content_segments:
-            text_to_process = segment
-
-            if "<think>" in text_to_process:
-                before, after = text_to_process.split("<think>", 1)
-                if not in_think and before:
-                    visible_output += before
-                    seen_visible = True
-                in_think = True
-                text_to_process = after
-
-            if in_think:
-                if "</think>" in text_to_process:
-                    in_think = False
-                    thought, after = text_to_process.split("</think>", 1)
-                    pending_think += thought
-                    if pending_think.strip():
-                        LOGGER.debug(f"LLM Thought: {pending_think}")
-                    pending_think = ""
-                    if after:
-                        visible_output += after
-                        seen_visible = True
-                else:
-                    pending_think += text_to_process
-            else:
-                visible_output += text_to_process
-                if text_to_process:
-                    seen_visible = True
-
-        if seen_visible and visible_output:
-            chunk["content"] = visible_output
-
-        if seen_visible or chunk.get("tool_calls") or chunk.get("role"):
+        if chunk:
             yield chunk
+
+    if pending_latex:
+        flushed_latex, _ = _consume_latex(pending_latex, flush=True)
+        if flushed_latex:
+            flushed_text = await _latex_to_text(flushed_latex)
+            if strip_emojis:
+                flushed_text = await _strip_emojis(flushed_text)
+            if strip_emphasis:
+                pending_emphasis += flushed_text
+            elif flushed_text:
+                yield {"content": flushed_text}
+
+    if pending_emphasis:
+        flushed_emphasis, _ = _consume_emphasis(pending_emphasis, flush=True)
+        if flushed_emphasis:
+            yield {"content": flushed_emphasis}
 
 
 class LocalAiEntity(Entity):
@@ -651,13 +695,19 @@ class LocalAiEntity(Entity):
         """Initialize the entity."""
         self.entry = entry
         self.subentry = subentry
-        self.model = subentry.data[CONF_MODEL]
         self._attr_unique_id = subentry.subentry_id
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, subentry.subentry_id)},
             name=subentry.title,
+            manufacturer="Local OpenAI",
+            model=subentry.data.get(CONF_MODEL, "Local"),
             entry_type=dr.DeviceEntryType.SERVICE,
         )
+
+    @property
+    def model(self) -> str:
+        """Return the model name."""
+        return str(self.subentry.data.get(CONF_MODEL, "Local"))
 
     async def _async_handle_chat_log(
         self,
@@ -669,18 +719,12 @@ class LocalAiEntity(Entity):
     ) -> None:
         """Generate an answer for the chat log."""
         options = self.subentry.data
-        strip_emojis = bool(options.get(CONF_STRIP_EMOJIS))
-        strip_emphasis = bool(options.get(CONF_STRIP_EMPHASIS))
-        strip_latex = bool(options.get(CONF_STRIP_LATEX))
-        temperature = options.get(CONF_TEMPERATURE, 1)
-        parallel_tool_calls = options.get(CONF_PARALLEL_TOOL_CALLS, True)
-
-        model_args: dict[str, Any] = {
-            "model": self.model,
-            "prompt_cache_key": chat_log.conversation_id,
-            "temperature": temperature,
-            "parallel_tool_calls": parallel_tool_calls,
-        }
+        strip_emojis = bool(options.get(LocalAiConfigKey.STRIP_EMOJIS))
+        strip_emphasis = bool(options.get(LocalAiConfigKey.STRIP_EMPHASIS))
+        strip_latex = bool(options.get(LocalAiConfigKey.STRIP_LATEX))
+        raw_temp = options.get(LocalAiConfigKey.TEMPERATURE, 1)
+        temperature = float(raw_temp) if isinstance(raw_temp, int | float) else 1.0
+        parallel_tool_calls = bool(options.get(LocalAiConfigKey.PARALLEL_TOOL_CALLS, True))
 
         tools: list[ChatCompletionFunctionToolParam] | None = None
         if chat_log.llm_api:
@@ -689,15 +733,15 @@ class LocalAiEntity(Entity):
                 for tool in chat_log.llm_api.tools
             ]
 
-        messages = [
+        messages: list[ChatCompletionMessageParam] = [
             m
             for content in chat_log.content
-            if (m := await _convert_content_to_chat_message(content, self.model))
+            if (m := await _convert_content_to_chat_message(content, self.model)) is not None
         ]
 
-        if options.get(CONF_MANUAL_PROMPTING, False) and user_input:
+        if options.get(LocalAiConfigKey.MANUAL_PROMPTING, False) and user_input:
             prompt = format_custom_prompt(
-                self.hass, options.get(CONF_PROMPT, ""), user_input, tools
+                self.hass, str(options.get(CONF_PROMPT, "")), user_input, tools
             )
             new_system_message = ChatCompletionSystemMessageParam(role="system", content=prompt)
             found = False
@@ -721,31 +765,64 @@ class LocalAiEntity(Entity):
             )
             return
 
-        model_args["messages"] = messages
-
-        if tools:
-            model_args["tools"] = tools
-
-        if structure:
-            if TYPE_CHECKING:
-                assert structure_name is not None
-            model_args["response_format"] = ResponseFormatJSONSchema(
-                type="json_schema",
-                json_schema=_format_structured_output(structure_name, structure, chat_log.llm_api),
-            )
-
         client = self.entry.runtime_data
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
-            LOGGER.debug("Sending chat request to API with payload: %s", model_args)
+            LOGGER.debug("Sending chat request to API for model: %s", self.model)
             try:
-                result_stream = await client.chat.completions.create(**model_args, stream=True)
+                if structure:
+                    response_format = ResponseFormatJSONSchema(
+                        type="json_schema",
+                        json_schema=_format_structured_output(
+                            structure_name or "response", structure, chat_log.llm_api
+                        ),
+                    )
+                    if tools:
+                        result_stream = await client.chat.completions.create(
+                            model=self.model,
+                            messages=messages,
+                            tools=tools,
+                            temperature=temperature,
+                            parallel_tool_calls=parallel_tool_calls,
+                            prompt_cache_key=chat_log.conversation_id,
+                            response_format=response_format,
+                            stream=True,
+                        )
+                    else:
+                        result_stream = await client.chat.completions.create(
+                            model=self.model,
+                            messages=messages,
+                            temperature=temperature,
+                            parallel_tool_calls=parallel_tool_calls,
+                            prompt_cache_key=chat_log.conversation_id,
+                            response_format=response_format,
+                            stream=True,
+                        )
+                elif tools:
+                    result_stream = await client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        tools=tools,
+                        temperature=temperature,
+                        parallel_tool_calls=parallel_tool_calls,
+                        prompt_cache_key=chat_log.conversation_id,
+                        stream=True,
+                    )
+                else:
+                    result_stream = await client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        temperature=temperature,
+                        parallel_tool_calls=parallel_tool_calls,
+                        prompt_cache_key=chat_log.conversation_id,
+                        stream=True,
+                    )
             except openai.OpenAIError as err:
                 LOGGER.error("Error requesting response from API: %s", err)
                 raise HomeAssistantError(f"Error talking to API: {err}") from err
 
             try:
-                model_args["messages"].extend(
+                messages.extend(
                     [
                         msg
                         async for content in chat_log.async_add_delta_content_stream(
@@ -755,6 +832,7 @@ class LocalAiEntity(Entity):
                             ),
                         )
                         if (msg := await _convert_content_to_chat_message(content, self.model))
+                        is not None
                     ]
                 )
             except Exception as err:
@@ -776,28 +854,26 @@ class LocalAiEntity(Entity):
         """Generate an image response using the Responses API."""
         response_input = _convert_completion_messages_to_response_input(messages)
 
-        model_args: dict[str, Any] = {
-            "model": self.model,
-            "input": response_input,
-            "prompt_cache_key": chat_log.conversation_id,
-            "temperature": temperature,
-            "stream": False,
-            "store": True,
-            "tool_choice": {"type": "image_generation"},
-            "tools": [
-                {
-                    "type": "image_generation",
-                    "model": self.model,
-                    "output_format": "png",
-                }
-            ],
-        }
-
         client = self.entry.runtime_data
 
-        LOGGER.debug("Sending image generation request to API: %s", model_args)
+        LOGGER.debug("Sending image generation request to API for model: %s", self.model)
         try:
-            response = await client.responses.create(**model_args)
+            response = await client.responses.create(
+                model=self.model,
+                input=response_input,
+                prompt_cache_key=chat_log.conversation_id,
+                temperature=temperature,
+                stream=False,
+                store=True,
+                tool_choice=ToolChoiceTypesParam(type="image_generation"),
+                tools=[
+                    ImageGeneration(
+                        type="image_generation",
+                        model=self.model,
+                        output_format="png",
+                    )
+                ],
+            )
         except openai.OpenAIError as err:
             LOGGER.error("Error requesting image response from API: %s", err)
             raise HomeAssistantError(f"Error talking to API: {err}") from err
@@ -807,13 +883,11 @@ class LocalAiEntity(Entity):
 
         if (not text_output) and getattr(response, "output", None):
             text_parts: list[str] = []
-            for item in response.output or ():
-                content = getattr(item, "content", None)
-                if not content:
-                    continue
-                for part in content or []:
-                    if getattr(part, "type", None) == "output_text":
-                        text_parts.append(getattr(part, "text", ""))
+            text_parts.extend(
+                f"![image]({item.result})"
+                for item in response.output or ()
+                if isinstance(item, ImageGenerationCall)
+            )
             if text_parts:
                 text_output = "".join(text_parts)
 
@@ -825,7 +899,7 @@ class LocalAiEntity(Entity):
         if strip_latex and text_output:
             text_output = await _latex_to_text(text_output)
         if strip_emphasis and text_output:
-            text_output, _ = _consume_emphasis(text_output, flush=True)
+            text_output = await _strip_emphasis_markers(text_output)
 
         LOGGER.debug("Final text_output after filtering: %s", text_output)
         if text_output == "":

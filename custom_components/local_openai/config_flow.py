@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import (
@@ -35,20 +34,11 @@ from homeassistant.helpers.selector import (
 from openai import AsyncOpenAI, OpenAIError
 
 from .const import (
-    CONF_BASE_URL,
-    CONF_GENERATE_DATA,
-    CONF_GENERATE_IMAGE,
-    CONF_MANUAL_PROMPTING,
-    CONF_PARALLEL_TOOL_CALLS,
-    CONF_SERVER_NAME,
-    CONF_STRIP_EMOJIS,
-    CONF_STRIP_EMPHASIS,
-    CONF_STRIP_LATEX,
-    CONF_SUPPORT_ATTACHMENTS,
-    CONF_TEMPERATURE,
     DOMAIN,
     LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
+    LocalAiConfigKey,
+    LocalAiSubentryType,
 )
 
 
@@ -64,22 +54,28 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> dict[str, type[ConfigSubentryFlow]]:
         """Return subentries supported by this handler."""
         return {
-            "conversation": ConversationFlowHandler,
-            "ai_task_data": AITaskDataFlowHandler,
+            LocalAiSubentryType.CONVERSATION: ConversationFlowHandler,
+            LocalAiSubentryType.AI_TASK_DATA: AITaskDataFlowHandler,
         }
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Handle the initial step."""
+    async def async_step_user(
+        self, user_input: dict[str, object] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the initial config flow step."""
         LOGGER.debug("Config flow: step_user, input: %s", user_input)
         errors = {}
         if user_input is not None:
             self._async_abort_entries_match(user_input)
-            LOGGER.debug(f"Initialising OpenAI client with base_url: {user_input[CONF_BASE_URL]}")
+            LOGGER.debug(
+                f"Initialising OpenAI client with base_url: {user_input[LocalAiConfigKey.BASE_URL]}"
+            )
 
             try:
+                base_url = user_input.get(LocalAiConfigKey.BASE_URL)
+                api_key = user_input.get(CONF_API_KEY, "")
                 client = AsyncOpenAI(
-                    base_url=user_input.get(CONF_BASE_URL),
-                    api_key=user_input.get(CONF_API_KEY, ""),
+                    base_url=str(base_url) if base_url is not None else None,
+                    api_key=str(api_key) if api_key is not None else "",
                     http_client=get_async_client(self.hass),
                 )
 
@@ -94,7 +90,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 LOGGER.debug("Server connection verified")
                 return self.async_create_entry(
-                    title=f"{user_input.get(CONF_SERVER_NAME, 'Local LLM Server')}",
+                    title=f"{user_input.get(LocalAiConfigKey.SERVER_NAME, 'Local LLM Server')}",
                     data=user_input,
                 )
 
@@ -102,8 +98,8 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_SERVER_NAME, default="Local LLM Server"): str,
-                    vol.Required(CONF_BASE_URL): str,
+                    vol.Required(LocalAiConfigKey.SERVER_NAME, default="Local LLM Server"): str,
+                    vol.Required(LocalAiConfigKey.BASE_URL): str,
                     vol.Optional(CONF_API_KEY): str,
                 }
             ),
@@ -116,6 +112,7 @@ class LocalAiSubentryFlowHandler(ConfigSubentryFlow):
 
     @staticmethod
     def strip_model_pathing(model_name: str) -> str:
+        """Strip file path and .gguf extension from model name."""
         matches = re.search(r"([^/]*)\.gguf$", model_name.strip())
         return matches[1] if matches else model_name
 
@@ -124,6 +121,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
     def get_llm_apis(self) -> list[SelectOptionDict]:
+        """Return available LLM APIs as select options."""
         return [
             SelectOptionDict(
                 label=api.name,
@@ -132,7 +130,8 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             for api in llm.async_get_apis(self.hass)
         ]
 
-    async def get_schema(self, options=None):
+    async def get_schema(self, options: dict[str, object] | None = None):
+        """Return the configuration schema for conversation options."""
         if options is None:
             options = {}
         llm_apis = self.get_llm_apis()
@@ -155,12 +154,16 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
-        default_model_value = options.get(CONF_MODEL)
-        if not default_model_value and downloaded_models:
-            default_model_value = downloaded_models[0]["value"]
-        default_model = default_model_value or "Local"
+        default_model: str = "Local"
+        if raw_model := options.get(CONF_MODEL):
+            default_model = str(raw_model)
+        elif downloaded_models:
+            default_model = downloaded_models[0]["value"]
+
         default_title = self.strip_model_pathing(default_model)
-        default_name = options.get(CONF_NAME) or f"{default_title} AI Agent"
+        default_name: str = f"{default_title} AI Agent"
+        if raw_name := options.get(CONF_NAME):
+            default_name = str(raw_name)
 
         return vol.Schema(
             {
@@ -186,59 +189,61 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
                     ),
                 ): SelectSelector(SelectSelectorConfig(options=llm_apis, multiple=True)),
                 vol.Optional(
-                    CONF_PARALLEL_TOOL_CALLS,
-                    default=options.get(CONF_PARALLEL_TOOL_CALLS, True),
+                    LocalAiConfigKey.PARALLEL_TOOL_CALLS,
+                    default=options.get(LocalAiConfigKey.PARALLEL_TOOL_CALLS, True),
                 ): bool,
                 vol.Optional(
-                    CONF_STRIP_EMOJIS,
-                    default=options.get(CONF_STRIP_EMOJIS, True),
+                    LocalAiConfigKey.STRIP_EMOJIS,
+                    default=options.get(LocalAiConfigKey.STRIP_EMOJIS, True),
                 ): bool,
                 vol.Optional(
-                    CONF_STRIP_EMPHASIS,
-                    default=options.get(CONF_STRIP_EMPHASIS, True),
+                    LocalAiConfigKey.STRIP_EMPHASIS,
+                    default=options.get(LocalAiConfigKey.STRIP_EMPHASIS, True),
                 ): bool,
                 vol.Optional(
-                    CONF_STRIP_LATEX,
-                    default=options.get(CONF_STRIP_LATEX, True),
+                    LocalAiConfigKey.STRIP_LATEX,
+                    default=options.get(LocalAiConfigKey.STRIP_LATEX, True),
                 ): bool,
                 vol.Optional(
-                    CONF_MANUAL_PROMPTING,
-                    default=options.get(CONF_MANUAL_PROMPTING, False),
+                    LocalAiConfigKey.MANUAL_PROMPTING,
+                    default=options.get(LocalAiConfigKey.MANUAL_PROMPTING, False),
                 ): bool,
                 vol.Optional(
-                    CONF_TEMPERATURE,
-                    default=options.get(CONF_TEMPERATURE, 1),
+                    LocalAiConfigKey.TEMPERATURE,
+                    default=options.get(LocalAiConfigKey.TEMPERATURE, 1),
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=1, step=0.05, mode=NumberSelectorMode.SLIDER)
                 ),
             }
         )
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """User flow to create a sensor subentry."""
-        if user_input is not None:
-            user_input = user_input.copy()
-            raw_name = user_input.get(CONF_NAME)
-            custom_name = raw_name.strip() if isinstance(raw_name, str) else None
-            if custom_name:
-                user_input[CONF_NAME] = custom_name
-            else:
-                user_input.pop(CONF_NAME, None)
+    async def async_step_user(
+        self, user_input: dict[str, object] | None = None
+    ) -> SubentryFlowResult:
+        """Handle user step to create a conversation subentry."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=await self.get_schema(),
+            )
+        user_input = user_input.copy()
+        raw_name = user_input.get(CONF_NAME)
+        custom_name = raw_name.strip() if isinstance(raw_name, str) else None
+        if custom_name:
+            user_input[CONF_NAME] = custom_name
+        else:
+            user_input.pop(CONF_NAME, None)
 
-            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
-            entry_title = custom_name or f"{model_name} AI Agent"
+        raw_model = user_input.get(CONF_MODEL, "Local")
+        model_name = self.strip_model_pathing(str(raw_model) if raw_model is not None else "Local")
+        entry_title = custom_name or f"{model_name} AI Agent"
 
-            return self.async_create_entry(title=entry_title, data=user_input)
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=await self.get_schema(),
-        )
+        return self.async_create_entry(title=entry_title, data=user_input)
 
     async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, object] | None = None
     ) -> SubentryFlowResult:
-        """User flow to create a sensor subentry."""
+        """Handle reconfigure step for a conversation subentry."""
         if user_input is not None:
             user_input = user_input.copy()
             raw_name = user_input.get(CONF_NAME)
@@ -248,7 +253,10 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
             else:
                 user_input.pop(CONF_NAME, None)
 
-            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
+            raw_model = user_input.get(CONF_MODEL, "Local")
+            model_name = self.strip_model_pathing(
+                str(raw_model) if raw_model is not None else "Local"
+            )
             entry_title = custom_name or f"{model_name} AI Agent"
 
             return self.async_update_and_abort(
@@ -274,7 +282,8 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
 class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
     """Handle subentry flow."""
 
-    async def get_schema(self, options=None):
+    async def get_schema(self, options: dict[str, object] | None = None):
+        """Return the configuration schema for AI task options."""
         if options is None:
             options = {}
         try:
@@ -294,13 +303,16 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
             LOGGER.exception(f"Unexpected exception retrieving models list: {err}")
             downloaded_models = []
 
-        default_model_value = options.get(CONF_MODEL)
-        if not default_model_value and downloaded_models:
-            default_model_value = downloaded_models[0]["value"]
-        default_model = default_model_value or "Local"
+        default_model: str = "Local"
+        if raw_model := options.get(CONF_MODEL):
+            default_model = str(raw_model)
+        elif downloaded_models:
+            default_model = downloaded_models[0]["value"]
 
         default_title = self.strip_model_pathing(default_model)
-        default_name = options.get(CONF_NAME) or f"{default_title} AI Task"
+        default_name: str = f"{default_title} AI Task"
+        if raw_name := options.get(CONF_NAME):
+            default_name = str(raw_name)
 
         return vol.Schema(
             {
@@ -315,63 +327,65 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
                     SelectSelectorConfig(options=downloaded_models, custom_value=True)
                 ),
                 vol.Optional(
-                    CONF_GENERATE_DATA,
-                    default=options.get(CONF_GENERATE_DATA, True),
+                    LocalAiConfigKey.GENERATE_DATA,
+                    default=options.get(LocalAiConfigKey.GENERATE_DATA, True),
                 ): bool,
                 vol.Optional(
-                    CONF_GENERATE_IMAGE,
-                    default=options.get(CONF_GENERATE_IMAGE, True),
+                    LocalAiConfigKey.GENERATE_IMAGE,
+                    default=options.get(LocalAiConfigKey.GENERATE_IMAGE, True),
                 ): bool,
                 vol.Optional(
-                    CONF_SUPPORT_ATTACHMENTS,
-                    default=options.get(CONF_SUPPORT_ATTACHMENTS, True),
+                    LocalAiConfigKey.SUPPORT_ATTACHMENTS,
+                    default=options.get(LocalAiConfigKey.SUPPORT_ATTACHMENTS, True),
                 ): bool,
                 vol.Optional(
-                    CONF_STRIP_EMOJIS,
-                    default=options.get(CONF_STRIP_EMOJIS, True),
+                    LocalAiConfigKey.STRIP_EMOJIS,
+                    default=options.get(LocalAiConfigKey.STRIP_EMOJIS, True),
                 ): bool,
                 vol.Optional(
-                    CONF_STRIP_EMPHASIS,
-                    default=options.get(CONF_STRIP_EMPHASIS, True),
+                    LocalAiConfigKey.STRIP_EMPHASIS,
+                    default=options.get(LocalAiConfigKey.STRIP_EMPHASIS, True),
                 ): bool,
                 vol.Optional(
-                    CONF_STRIP_LATEX,
-                    default=options.get(CONF_STRIP_LATEX, True),
+                    LocalAiConfigKey.STRIP_LATEX,
+                    default=options.get(LocalAiConfigKey.STRIP_LATEX, True),
                 ): bool,
                 vol.Optional(
-                    CONF_TEMPERATURE,
-                    default=options.get(CONF_TEMPERATURE, 1),
+                    LocalAiConfigKey.TEMPERATURE,
+                    default=options.get(LocalAiConfigKey.TEMPERATURE, 1),
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=1, step=0.05, mode=NumberSelectorMode.SLIDER)
                 ),
             }
         )
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> SubentryFlowResult:
-        """User flow to create a sensor subentry."""
-        if user_input is not None:
-            user_input = user_input.copy()
-            raw_name = user_input.get(CONF_NAME)
-            custom_name = raw_name.strip() if isinstance(raw_name, str) else None
-            if custom_name:
-                user_input[CONF_NAME] = custom_name
-            else:
-                user_input.pop(CONF_NAME, None)
+    async def async_step_user(
+        self, user_input: dict[str, object] | None = None
+    ) -> SubentryFlowResult:
+        """Handle user step to create an AI task subentry."""
+        if user_input is None:
+            return self.async_show_form(
+                step_id="user",
+                data_schema=await self.get_schema(),
+            )
+        user_input = user_input.copy()
+        raw_name = user_input.get(CONF_NAME)
+        custom_name = raw_name.strip() if isinstance(raw_name, str) else None
+        if custom_name:
+            user_input[CONF_NAME] = custom_name
+        else:
+            user_input.pop(CONF_NAME, None)
 
-            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
-            entry_title = custom_name or f"{model_name} AI Task"
+        raw_model = user_input.get(CONF_MODEL, "Local")
+        model_name = self.strip_model_pathing(str(raw_model) if raw_model is not None else "Local")
+        entry_title = custom_name or f"{model_name} AI Task"
 
-            return self.async_create_entry(title=entry_title, data=user_input)
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=await self.get_schema(),
-        )
+        return self.async_create_entry(title=entry_title, data=user_input)
 
     async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, object] | None = None
     ) -> SubentryFlowResult:
-        """User flow to reconfigure a sensor subentry."""
+        """Handle reconfigure step for an AI task subentry."""
         if user_input is not None:
             user_input = user_input.copy()
             raw_name = user_input.get(CONF_NAME)
@@ -381,7 +395,10 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
             else:
                 user_input.pop(CONF_NAME, None)
 
-            model_name = self.strip_model_pathing(user_input.get(CONF_MODEL, "Local"))
+            raw_model = user_input.get(CONF_MODEL, "Local")
+            model_name = self.strip_model_pathing(
+                str(raw_model) if raw_model is not None else "Local"
+            )
             entry_title = custom_name or f"{model_name} AI Task"
 
             return self.async_update_and_abort(
