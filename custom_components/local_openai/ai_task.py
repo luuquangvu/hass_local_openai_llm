@@ -20,6 +20,7 @@ from .const import (
     LocalAiSubentryType,
 )
 from .entity import LocalAiEntity
+from .helpers import _clean_json_data
 
 
 async def async_setup_entry(
@@ -66,12 +67,13 @@ class LocalAITaskEntity(
         chat_log: conversation.ChatLog,
     ) -> ai_task.GenDataTaskResult:
         """Handle a generate data task."""
-        await self._async_handle_chat_log(chat_log, task.name, task.structure)
+        structure_name = task.name.strip() if task.name else None
+        await self._async_handle_chat_log(chat_log, structure_name, task.structure)
 
         if not isinstance(chat_log.content[-1], conversation.AssistantContent):
             raise HomeAssistantError("Last content in chat log is not an AssistantContent")
 
-        text = chat_log.content[-1].content or ""
+        text = (chat_log.content[-1].content or "").strip()
         LOGGER.debug("Raw text content from LLM for GenDataTask: %s", text)
 
         if not task.structure:
@@ -86,6 +88,9 @@ class LocalAITaskEntity(
             LOGGER.error("Failed to parse structured response from LLM: %s", err)
             raise HomeAssistantError("Error with structured response") from err
 
+        if isinstance(data, dict | list):
+            data = _clean_json_data(data)
+
         return ai_task.GenDataTaskResult(
             conversation_id=chat_log.conversation_id,
             data=data,
@@ -97,7 +102,8 @@ class LocalAITaskEntity(
         chat_log: conversation.ChatLog,
     ) -> ai_task.GenImageTaskResult:
         """Handle a generate image task."""
-        await self._async_handle_chat_log(chat_log, task.name, force_image=True)
+        structure_name = task.name.strip() if task.name else None
+        await self._async_handle_chat_log(chat_log, structure_name, force_image=True)
 
         if not isinstance(chat_log.content[-1], conversation.AssistantContent):
             raise HomeAssistantError("Last content in chat log is not an AssistantContent")
@@ -138,6 +144,9 @@ class LocalAITaskEntity(
                 width = height = None
 
         revised_prompt = getattr(image_call, "revised_prompt", None)
+        if isinstance(revised_prompt, str):
+            revised_prompt = revised_prompt.strip()
+
         LOGGER.debug(
             "Generated image details: mime_type=%s, width=%s, height=%s, revised_prompt=%s",
             mime_type,
