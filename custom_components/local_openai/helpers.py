@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
 import mimetypes
 import re
 import unicodedata
 from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import demoji
 import orjson
-import voluptuous as vol
 from homeassistant.components import conversation
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
@@ -46,8 +46,21 @@ from openai.types.responses import (
 from openai.types.responses.response_input_item_param import FunctionCallOutput
 from openai.types.shared_params import FunctionDefinition
 from openai.types.shared_params.response_format_json_schema import JSONSchema
+
+if TYPE_CHECKING:
+    import voluptuous as vol
+else:
+    try:
+        import probatio as vol
+    except ImportError:
+        import voluptuous as vol
+
+try:
+    from probatio import to_openapi as convert
+except ImportError:
+    convert = importlib.import_module("voluptuous_openapi").convert
+
 from pylatexenc.latex2text import LatexNodes2Text
-from voluptuous_openapi import convert
 
 from .const import (
     CURRENCY_PATTERN,

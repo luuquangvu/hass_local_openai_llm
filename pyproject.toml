@@ -8,7 +8,7 @@ dependencies = ["demoji", "openai<3", "pylatexenc", "webcolors"]
 
 [dependency-groups]
 dev = [
-  "homeassistant>=2026.8.0",
+  "homeassistant",
   "interrogate",
   "orjson",
   "prek",

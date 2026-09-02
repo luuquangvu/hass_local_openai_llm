@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import openai
-import voluptuous as vol
+
+if TYPE_CHECKING:
+    import voluptuous as vol
+else:
+    try:
+        import probatio as vol
+    except ImportError:
+        import voluptuous as vol
+
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigSubentry
 from homeassistant.const import CONF_MODEL, CONF_PROMPT
