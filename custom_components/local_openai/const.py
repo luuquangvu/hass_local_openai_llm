@@ -35,13 +35,6 @@ class LocalAiSubentryType(StrEnum):
     CONVERSATION = "conversation"
 
 
-class AudioFormat(StrEnum):
-    """Supported audio formats for Local OpenAI LLM."""
-
-    MP3 = "mp3"
-    WAV = "wav"
-
-
 RECOMMENDED_CONVERSATION_OPTIONS = {
     LocalAiConfigKey.RECOMMENDED: True,
     CONF_LLM_HASS_API: [llm.LLM_API_ASSIST],
@@ -49,19 +42,17 @@ RECOMMENDED_CONVERSATION_OPTIONS = {
 }
 
 MAX_TOOL_ITERATIONS = 10
+TIMEOUT = 10.0
 
-AUDIO_MIME_TYPE_MAP: dict[str, AudioFormat] = {
-    "audio/mpeg": AudioFormat.MP3,
-    "audio/mp3": AudioFormat.MP3,
-    "audio/mpeg3": AudioFormat.MP3,
-    "audio/x-mpeg-3": AudioFormat.MP3,
-    "audio/x-mp3": AudioFormat.MP3,
-    "audio/wav": AudioFormat.WAV,
-    "audio/x-wav": AudioFormat.WAV,
-    "audio/vnd.wave": AudioFormat.WAV,
-}
+CURRENCY_PATTERN = re.compile(r"\$\d+(?:,\d{3})*(?:\.\d+)?(?=\b|\s|[,\.;:!\?]|\Z)")
+CURRENCY_PLACEHOLDER_PREFIX = "\x00CURRENCY_"
+CURRENCY_PLACEHOLDER_SUFFIX = "\x00"
 
-CURRENCY_PATTERN = re.compile(r"\$\d+(?:\.\d+)?(?:\s|[,\.;:!\?]|\Z)")
+THINK_OPEN_TAG = "<think>"
+THINK_CLOSE_TAG = "</think>"
+
+EMPHASIS_MARKERS = ("*", "_")
+MAX_EMPHASIS_MARKER_LEN = 3
 
 LATEX_MATH_SPAN = re.compile(
     r"""

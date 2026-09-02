@@ -64,10 +64,16 @@ from pylatexenc.latex2text import LatexNodes2Text
 
 from .const import (
     CURRENCY_PATTERN,
+    CURRENCY_PLACEHOLDER_PREFIX,
+    CURRENCY_PLACEHOLDER_SUFFIX,
     DOMAIN,
+    EMPHASIS_MARKERS,
     GEMINI_MIME_TYPES_SUPPORTED,
     LATEX_MATH_SPAN,
     LOGGER,
+    MAX_EMPHASIS_MARKER_LEN,
+    THINK_CLOSE_TAG,
+    THINK_OPEN_TAG,
 )
 
 
@@ -83,15 +89,40 @@ async def _strip_emojis(text: str) -> str:
     return await loop.run_in_executor(None, demoji.replace, text, "")
 
 
+_LATEX_CONVERTER = LatexNodes2Text(keep_comments=True, keep_braced_groups=True)
+
+
+def _mask_currencies(text: str) -> tuple[str, list[str]]:
+    """Mask currency occurrences in text to avoid LaTeX math collisions."""
+    currencies: list[str] = []
+
+    def mask_currency(match: re.Match[str]) -> str:
+        currencies.append(match.group(0))
+        return f"{CURRENCY_PLACEHOLDER_PREFIX}{len(currencies) - 1}{CURRENCY_PLACEHOLDER_SUFFIX}"
+
+    return CURRENCY_PATTERN.sub(mask_currency, text), currencies
+
+
+def _unmask_currencies(text: str, currencies: list[str]) -> str:
+    """Restore masked currency occurrences in text."""
+    for idx, currency in enumerate(currencies):
+        text = text.replace(
+            f"{CURRENCY_PLACEHOLDER_PREFIX}{idx}{CURRENCY_PLACEHOLDER_SUFFIX}",
+            currency,
+        )
+    return text
+
+
 def _sync_latex_to_text(text: str) -> str:
     """Synchronous helper to convert LaTeX math spans to text."""
-    converter = LatexNodes2Text(keep_comments=True, keep_braced_groups=True)
+    masked, currencies = _mask_currencies(text)
 
     def replace(match: re.Match[str]) -> str:
         span = match.group(0)
-        return converter.latex_to_text(span)
+        return _LATEX_CONVERTER.latex_to_text(span)
 
-    return LATEX_MATH_SPAN.sub(replace, text)
+    converted = LATEX_MATH_SPAN.sub(replace, masked)
+    return _unmask_currencies(converted, currencies)
 
 
 async def _latex_to_text(text: str) -> str:
@@ -133,11 +164,15 @@ def _sync_strip_emphasis_markers(text: str) -> str:
 
     while i < length:
         ch = text[i]
-        if ch in ("*", "_"):
+        if ch in EMPHASIS_MARKERS:
             marker = ch
             marker_len = 1
-            if i + 1 < length and text[i + 1] == marker:
-                marker_len = 2
+            while (
+                i + marker_len < length
+                and text[i + marker_len] == marker
+                and marker_len < MAX_EMPHASIS_MARKER_LEN
+            ):
+                marker_len += 1
 
             start = i
             idx = i + marker_len
@@ -186,16 +221,50 @@ def _consume_emphasis(buffer: str, flush: bool = False) -> tuple[str, str]:
     if flush or not buffer:
         return _sync_strip_emphasis_markers(buffer), ""
 
-    for marker in ("**", "__"):
-        if buffer.count(marker) % 2 != 0:
-            last_idx = buffer.rfind(marker)
-            return _sync_strip_emphasis_markers(buffer[:last_idx]), buffer[last_idx:]
+    length = len(buffer)
+    i = 0
+    unclosed_idx: int | None = None
 
-    for marker, double_marker in (("*", "**"), ("_", "__")):
-        single_count = buffer.count(marker) - 2 * buffer.count(double_marker)
-        if single_count % 2 != 0:
-            last_idx = buffer.rfind(marker)
-            return _sync_strip_emphasis_markers(buffer[:last_idx]), buffer[last_idx:]
+    while i < length:
+        ch = buffer[i]
+        if ch in EMPHASIS_MARKERS:
+            marker = ch
+            marker_len = 1
+            while (
+                i + marker_len < length
+                and buffer[i + marker_len] == marker
+                and marker_len < MAX_EMPHASIS_MARKER_LEN
+            ):
+                marker_len += 1
+            start = i
+            idx = i + marker_len
+            prev_char = buffer[start - 1] if start > 0 else ""
+            char_after_open = buffer[idx] if idx < length else ""
+
+            if not char_after_open:
+                unclosed_idx = start
+                break
+
+            if char_after_open.isspace():
+                i = idx
+                continue
+
+            if marker == "_" and _is_word_character(prev_char):
+                i = idx
+                continue
+
+            search_marker = marker * marker_len
+            closing_idx = buffer.find(search_marker, idx)
+            if closing_idx != -1:
+                i = closing_idx + marker_len
+                continue
+
+            unclosed_idx = start
+            break
+        i += 1
+
+    if unclosed_idx is not None:
+        return _sync_strip_emphasis_markers(buffer[:unclosed_idx]), buffer[unclosed_idx:]
 
     return _sync_strip_emphasis_markers(buffer), ""
 
@@ -208,21 +277,23 @@ async def _strip_emphasis_markers(text: str) -> str:
 
 def _consume_dollar_latex(buffer: str) -> tuple[str, str] | None:
     """Check for an unclosed single dollar LaTeX delimiter."""
-    if buffer.count("$") % 2 == 0:
+    masked, currencies = _mask_currencies(buffer)
+    if masked.count("$") % 2 == 0:
         return None
 
-    last_dollar_idx = buffer.rfind("$")
-    following_text = buffer[last_dollar_idx:]
-    if CURRENCY_PATTERN.match(following_text):
-        return buffer, ""
-
-    if following_no_dollar := buffer[last_dollar_idx + 1 :]:
+    last_dollar_idx = masked.rfind("$")
+    if following_no_dollar := masked[last_dollar_idx + 1 :]:
+        if following_no_dollar[0].isspace():
+            return buffer, ""
         return (
-            (buffer, "")
-            if following_no_dollar[0].isspace()
-            else (buffer[:last_dollar_idx], buffer[last_dollar_idx:])
+            _unmask_currencies(masked[:last_dollar_idx], currencies),
+            _unmask_currencies(masked[last_dollar_idx:], currencies),
         )
-    return buffer[:last_dollar_idx], buffer[last_dollar_idx:]
+
+    return (
+        _unmask_currencies(masked[:last_dollar_idx], currencies),
+        _unmask_currencies(masked[last_dollar_idx:], currencies),
+    )
 
 
 def _consume_latex(buffer: str, flush: bool = False) -> tuple[str, str]:
@@ -498,14 +569,9 @@ def _convert_completion_messages_to_response_input(
 
 def b64_file(file_path: Path) -> str:
     """Retrieve the base64 encoded file contents."""
+    if not file_path.is_file():
+        raise HomeAssistantError(f"Attachment file not found: {file_path}")
     return base64.b64encode(file_path.read_bytes()).decode("utf-8")
-
-
-def _stringify_keys(obj: object) -> object:
-    """Recursively convert dictionary keys to strings."""
-    if isinstance(obj, dict):
-        return {str(k): _stringify_keys(v) for k, v in obj.items()}
-    return [_stringify_keys(v) for v in obj] if isinstance(obj, list) else obj
 
 
 async def _convert_content_to_chat_message(
@@ -653,10 +719,11 @@ async def _transform_stream(
     strip_latex: bool,
 ) -> AsyncGenerator[conversation.AssistantContentDeltaDict]:
     """Transform a streaming OpenAI response to ChatLog format."""
-    pending_think = ""
     in_think = False
     seen_visible = False
-    pending_tool_calls: list[dict] = []
+    prefix_buffer = ""
+    think_close_buffer = ""
+    pending_tool_calls: list[dict[str, str]] = []
     pending_emphasis: str = ""
     pending_latex: str = ""
 
@@ -676,9 +743,9 @@ async def _transform_stream(
             chunk["tool_calls"] = [
                 llm.ToolInput(
                     tool_name=tool_call["name"].strip(),
-                    tool_args=_decode_tool_arguments(tool_call["args"])
-                    if tool_call["args"]
-                    else {},
+                    tool_args=(
+                        _decode_tool_arguments(tool_call["args"]) if tool_call["args"] else {}
+                    ),
                 )
                 for tool_call in pending_tool_calls
                 if tool_call["name"].strip()
@@ -698,37 +765,51 @@ async def _transform_stream(
 
         if delta.content:
             text = delta.content
-            if in_think:
-                if "</think>" in text:
-                    think_part, _, normal_part = text.partition("</think>")
-                    pending_think += think_part
-                    in_think = False
-                    chunk["thinking_content"] = pending_think
-                    pending_think = ""
-                    text = normal_part
-                else:
-                    pending_think += text
-                    continue
-            elif not seen_visible:
-                leading_ws = len(text) - len(text.lstrip())
-                stripped = text[leading_ws:]
 
-                if stripped.startswith("<think>"):
+            if not seen_visible and not in_think:
+                prefix_buffer += text
+                stripped_prefix = prefix_buffer.lstrip()
+                if not stripped_prefix:
+                    continue
+                if stripped_prefix.startswith(THINK_OPEN_TAG):
                     in_think = True
-                    after_tag = stripped[len("<think>") :]
-                    if "</think>" in after_tag:
-                        think_part, _, normal_part = after_tag.partition("</think>")
-                        chunk["thinking_content"] = think_part
-                        in_think = False
-                        text = normal_part
-                    else:
-                        pending_think = after_tag
-                        continue
-                elif not stripped:
+                    text = stripped_prefix[len(THINK_OPEN_TAG) :]
+                    prefix_buffer = ""
+                elif THINK_OPEN_TAG.startswith(stripped_prefix):
                     continue
                 else:
                     seen_visible = True
-                    text = stripped
+                    text = prefix_buffer
+                    prefix_buffer = ""
+
+            if in_think:
+                combined = think_close_buffer + text
+                think_close_buffer = ""
+                if THINK_CLOSE_TAG in combined:
+                    before, _, after = combined.partition(THINK_CLOSE_TAG)
+                    in_think = False
+                    seen_visible = True
+                    if before:
+                        prior = chunk.get("thinking_content")
+                        chunk["thinking_content"] = (prior or "") + before
+                    text = after
+                else:
+                    max_check = min(len(THINK_CLOSE_TAG) - 1, len(combined))
+                    matched_len = 0
+                    for length in range(max_check, 0, -1):
+                        if combined.endswith(THINK_CLOSE_TAG[:length]):
+                            matched_len = length
+                            break
+                    if matched_len > 0:
+                        think_close_buffer = combined[-matched_len:]
+                        ready_think = combined[:-matched_len]
+                    else:
+                        ready_think = combined
+
+                    if ready_think:
+                        prior = chunk.get("thinking_content")
+                        chunk["thinking_content"] = (prior or "") + ready_think
+                    text = ""
 
             if not text:
                 if chunk:
@@ -758,6 +839,32 @@ async def _transform_stream(
 
         if chunk:
             yield chunk
+
+    if in_think and think_close_buffer:
+        yield {"thinking_content": think_close_buffer}
+    elif not seen_visible and prefix_buffer:
+        prefix_text = prefix_buffer
+        if strip_latex:
+            prefix_text = await _latex_to_text(prefix_text)
+        if strip_emojis:
+            prefix_text = await _strip_emojis(prefix_text)
+        if strip_emphasis:
+            prefix_text = await _strip_emphasis_markers(prefix_text)
+        if prefix_text:
+            yield {"content": prefix_text}
+
+    if pending_tool_calls:
+        flushed_calls = [
+            llm.ToolInput(
+                tool_name=tool_call["name"].strip(),
+                tool_args=(_decode_tool_arguments(tool_call["args"]) if tool_call["args"] else {}),
+            )
+            for tool_call in pending_tool_calls
+            if tool_call["name"].strip()
+        ]
+        if flushed_calls:
+            yield {"tool_calls": flushed_calls}
+        pending_tool_calls = []
 
     if pending_latex:
         flushed_latex, _ = _consume_latex(pending_latex, flush=True)

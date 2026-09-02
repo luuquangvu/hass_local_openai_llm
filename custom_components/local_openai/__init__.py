@@ -9,7 +9,7 @@ from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.httpx_client import get_async_client
 from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 
-from .const import LOGGER, LocalAiConfigKey
+from .const import LOGGER, TIMEOUT, LocalAiConfigKey
 
 PLATFORMS = [Platform.AI_TASK, Platform.CONVERSATION]
 
@@ -31,7 +31,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> b
 
     try:
         LOGGER.debug("Verifying connection by listing models...")
-        async for model in client.with_options(timeout=10.0).models.list():
+        async for model in client.with_options(timeout=TIMEOUT).models.list():
             LOGGER.debug("Successfully connected. Found at least one model: %s", model.id)
             break
     except AuthenticationError as err:

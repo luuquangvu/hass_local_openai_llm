@@ -7,6 +7,7 @@ from homeassistant.components import conversation
 from homeassistant.components.conversation.const import DOMAIN as CONVERSATION_DOMAIN
 from homeassistant.components.homeassistant.exposed_entities import async_should_expose
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, TemplateError
 from homeassistant.helpers import (
     area_registry as ar,
 )
@@ -72,10 +73,15 @@ def get_entities(hass: HomeAssistant) -> list[dict[str, object]]:
                 if unit_suffix:
                     value = f"{value} {unit_suffix}"
                 elif attribute_name == "temperature" and isinstance(value, int | float):
-                    suffix = _attributes.get("unit_of_measurement") or (
-                        "°F" if value > 50 else "°C"
+                    suffix = (
+                        _attributes.get("unit_of_measurement") or hass.config.units.temperature_unit
                     )
-                    value = f"{int(value)} {suffix}"
+                    formatted_temp = (
+                        f"{value:.1f}".rstrip("0").rstrip(".")
+                        if isinstance(value, float)
+                        else str(value)
+                    )
+                    value = f"{formatted_temp} {suffix}"
                 elif (
                     attribute_name == "rgb_color"
                     and isinstance(value, tuple | list)
@@ -93,7 +99,7 @@ def get_entities(hass: HomeAssistant) -> list[dict[str, object]]:
                 result.append(str(value))
         return result
 
-    entities_to_expose, _domains = get_exposed_entities(hass)
+    entities_to_expose = get_exposed_entities(hass)
     devices: list[dict[str, object]] = []
 
     for name, attributes in entities_to_expose.items():
@@ -118,10 +124,9 @@ def get_entities(hass: HomeAssistant) -> list[dict[str, object]]:
     return devices
 
 
-def get_exposed_entities(hass: HomeAssistant) -> tuple[dict[str, dict[str, object]], list[str]]:
+def get_exposed_entities(hass: HomeAssistant) -> dict[str, dict[str, object]]:
     """Gather exposed Home Assistant entities and their domain states."""
     entity_states: dict[str, dict[str, object]] = {}
-    domains = set()
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
     area_registry = ar.async_get(hass)
@@ -156,9 +161,8 @@ def get_exposed_entities(hass: HomeAssistant) -> tuple[dict[str, dict[str, objec
             attributes["area_name"] = area.name
 
         entity_states[state.entity_id] = attributes
-        domains.add(state.domain)
 
-    return entity_states, list(domains)
+    return entity_states
 
 
 def format_custom_prompt(
@@ -192,19 +196,23 @@ def format_custom_prompt(
         device_name,
     )
 
-    rendered_prompt = template.Template(
-        agent_prompt,
-        hass,
-    ).async_render(
-        {
-            "tools": tools,
-            "devices": devices,
-            "floor": floor,
-            "area": area,
-            "device": device_name,
-            "extra_system_prompt": user_input.extra_system_prompt,
-        },
-        parse_result=False,
-    )
+    try:
+        rendered_prompt = template.Template(
+            agent_prompt,
+            hass,
+        ).async_render(
+            {
+                "tools": tools,
+                "devices": devices,
+                "floor": floor,
+                "area": area,
+                "device": device_name,
+                "extra_system_prompt": user_input.extra_system_prompt,
+            },
+            parse_result=False,
+        )
+    except TemplateError as err:
+        LOGGER.error("Error rendering custom prompt: %s", err)
+        raise HomeAssistantError(f"Error rendering custom prompt: {err}") from err
     LOGGER.debug("Final rendered manual prompt: %s", rendered_prompt)
     return str(rendered_prompt)

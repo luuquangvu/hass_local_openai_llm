@@ -81,6 +81,9 @@ class LocalAiEntity(Entity):
         strip_emojis = bool(options.get(LocalAiConfigKey.STRIP_EMOJIS))
         strip_emphasis = bool(options.get(LocalAiConfigKey.STRIP_EMPHASIS))
         strip_latex = bool(options.get(LocalAiConfigKey.STRIP_LATEX))
+        if structure is not None:
+            strip_emphasis = False
+            strip_latex = False
         raw_temp = options.get(LocalAiConfigKey.TEMPERATURE, 1)
         temperature = float(raw_temp) if isinstance(raw_temp, int | float) else 1.0
         parallel_tool_calls = bool(options.get(LocalAiConfigKey.PARALLEL_TOOL_CALLS, True))
@@ -238,21 +241,10 @@ class LocalAiEntity(Entity):
             raise HomeAssistantError(f"Error talking to API: {err}") from err
 
         LOGGER.debug("Received image response from API: %s", response)
-        text_output = getattr(response, "output_text", None)
-
-        if (not text_output) and getattr(response, "output", None):
-            text_parts: list[str] = []
-            text_parts.extend(
-                f"![image]({item.result})"
-                for item in response.output or ()
-                if isinstance(item, ImageGenerationCall)
-            )
-            if text_parts:
-                text_output = "".join(text_parts)
+        raw_text_output = getattr(response, "output_text", None)
+        text_output: str | None = str(raw_text_output).strip() if raw_text_output else None
 
         LOGGER.debug("Extracted text_output before filtering: %s", text_output)
-        if text_output:
-            text_output = text_output.strip()
         if strip_emojis and text_output:
             text_output = await _strip_emojis(text_output)
         if strip_latex and text_output:
@@ -261,11 +253,9 @@ class LocalAiEntity(Entity):
             text_output = await _strip_emphasis_markers(text_output)
 
         if text_output:
-            text_output = text_output.strip()
+            text_output = text_output.strip() or None
 
         LOGGER.debug("Final text_output after filtering: %s", text_output)
-        if text_output == "":
-            text_output = None
 
         image_call: ImageGenerationCall | None = None
         for item in response.output or ():

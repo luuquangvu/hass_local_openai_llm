@@ -45,6 +45,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     RECOMMENDED_CONVERSATION_OPTIONS,
+    TIMEOUT,
     LocalAiConfigKey,
     LocalAiSubentryType,
 )
@@ -88,7 +89,7 @@ class LocalAiConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
 
                 LOGGER.debug("Retrieving model list to ensure server is accessible")
-                await client.models.list()
+                await client.with_options(timeout=TIMEOUT).models.list()
             except OpenAIError as err:
                 LOGGER.exception(f"OpenAI Error: {err}")
                 errors["base"] = "cannot_connect"
@@ -146,7 +147,7 @@ class ConversationFlowHandler(LocalAiSubentryFlowHandler):
         client = self._get_entry().runtime_data
 
         try:
-            response = await client.models.list()
+            response = await client.with_options(timeout=TIMEOUT).models.list()
             downloaded_models: list[SelectOptionDict] = [
                 SelectOptionDict(
                     label=model.id,
@@ -296,7 +297,7 @@ class AITaskDataFlowHandler(LocalAiSubentryFlowHandler):
             options = {}
         try:
             client = self._get_entry().runtime_data
-            response = await client.models.list()
+            response = await client.with_options(timeout=TIMEOUT).models.list()
             downloaded_models: list[SelectOptionDict] = [
                 SelectOptionDict(
                     label=model.id,
