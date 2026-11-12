@@ -11,6 +11,13 @@ from openai import AsyncOpenAI, AuthenticationError, OpenAIError
 
 from .const import LOGGER, TIMEOUT, LocalAiConfigKey
 
+
+def _preload_openai_resources(client: AsyncOpenAI) -> None:
+    """Load OpenAI's lazily imported resources outside the event loop."""
+    _ = client.chat.completions
+    _ = client.responses
+
+
 PLATFORMS = [Platform.AI_TASK, Platform.CONVERSATION]
 
 type LocalAiConfigEntry = ConfigEntry[AsyncOpenAI]
@@ -28,6 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalAiConfigEntry) -> b
     )
 
     _ = await hass.loop.run_in_executor(None, client.platform_headers)
+    await hass.async_add_executor_job(_preload_openai_resources, client)
 
     try:
         LOGGER.debug("Verifying connection by listing models...")

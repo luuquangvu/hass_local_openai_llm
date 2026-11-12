@@ -48,7 +48,7 @@ from openai.types.shared_params import FunctionDefinition
 from openai.types.shared_params.response_format_json_schema import JSONSchema
 
 if TYPE_CHECKING:
-    import voluptuous as vol
+    import probatio as vol
 else:
     try:
         import probatio as vol
@@ -574,6 +574,14 @@ def b64_file(file_path: Path) -> str:
     return base64.b64encode(file_path.read_bytes()).decode("utf-8")
 
 
+def _tool_result_data(content: conversation.ToolResultContent) -> object:
+    """Return the tool result data across supported Home Assistant versions."""
+    result = getattr(content, "result", None)
+    if result is not None:
+        return result.data
+    return getattr(content, "tool_result", {})
+
+
 async def _convert_content_to_chat_message(
     content: object,
     model: str,
@@ -584,7 +592,7 @@ async def _convert_content_to_chat_message(
             role="tool",
             tool_call_id=content.tool_call_id.strip(),
             content=orjson.dumps(
-                _clean_json_data(content.tool_result),
+                _clean_json_data(_tool_result_data(content)),
                 option=orjson.OPT_SORT_KEYS,
             ).decode("utf-8"),
         )
